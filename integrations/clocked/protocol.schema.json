@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/shemshallah/NaNLMind_CLOCKED/blob/main/integrations/clocked/protocol.schema.json",
+  "title": "NaNLMind Endpoint Experience Event",
+  "description": "Hardware-neutral, content-minimized observation envelope. It is not a native training commit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "event_id",
+    "observed_at",
+    "input_sha256",
+    "response_sha256",
+    "source_endpoint",
+    "pipeline",
+    "task_labels",
+    "learning_state",
+    "raw_text_persisted",
+    "raw_response_persisted"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nanlm.clocked-experience"
+    },
+    "version": {
+      "const": 1
+    },
+    "protocol_version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "input_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "response_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_endpoint": {
+      "const": "clocked_demo"
+    },
+    "tenant_id": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "pipeline": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 48
+          },
+          "status": {
+            "type": "integer"
+          },
+          "model_ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "skipped": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "verdict": {
+            "enum": [
+              "safe",
+              "unsafe",
+              "unknown",
+              "pass",
+              "fail"
+            ]
+          },
+          "injection": {
+            "type": "boolean"
+          },
+          "answers_question": {
+            "type": "boolean"
+          },
+          "stopped": {
+            "type": "boolean"
+          },
+          "extracted_field_names": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          "decisions": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "task_family": {
+                "enum": [
+                  "technical_document",
+                  "code_or_script",
+                  "support_request",
+                  "general_prose",
+                  "structured_record",
+                  "unknown"
+                ]
+              },
+              "contains_claims": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error_class": {
+            "const": "clocked_step_error"
+          },
+          "error_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "task_labels": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task_family": {
+          "enum": [
+            "technical_document",
+            "code_or_script",
+            "support_request",
+            "general_prose",
+            "structured_record",
+            "unknown"
+          ]
+        },
+        "contains_claims": {
+          "type": "boolean"
+        }
+      }
+    },
+    "stopped": {
+      "type": "boolean"
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    "credits": {
+      "type": "number",
+      "minimum": 0
+    },
+    "cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "cost_basis": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "learning_state": {
+      "const": "awaiting_nanlmind_ingest"
+    },
+    "raw_text_persisted": {
+      "const": false
+    },
+    "raw_response_persisted": {
+      "const": false
+    }
+  }
+}
