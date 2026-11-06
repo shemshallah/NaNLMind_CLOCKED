@@ -1,0 +1,28 @@
+name: CLOCKED service tests
+
+on:
+  pull_request:
+    paths:
+      - "integrations/clocked/**"
+      - ".github/workflows/clocked-service.yml"
+  push:
+    branches: [main]
+    paths:
+      - "integrations/clocked/**"
+      - ".github/workflows/clocked-service.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  service-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install service dependencies
+        run: python -m pip install -r integrations/clocked/requirements.txt
+      - name: Run offline CLOCKED service tests
+        run: python -m unittest discover -s integrations/clocked -p "test_*.py" -v
