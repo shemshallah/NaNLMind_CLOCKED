@@ -1370,3 +1370,40 @@ The register chart maps CLOCKED data down to bits and mirror-pair cells; the ext
 The user works in one scratch. HERMES plans and calls CLOCKED; CLOCKED returns structured evidence; NaNLMind maps, learns and responds in the same scratch; HERMES synthesizes multiple results and continues the conversation. This is the core product experience and the central research loop.
 
 **No implementation code is included in this design round.**
+
+
+---
+
+## 18. Repository boundary and HERMES head-cortex refinement
+
+The implementation boundary is now explicit:
+
+- **NaNLMind_CLOCKED owns the upstream service side:** Rezolve.ai SDK, upstream API credentials, gateway, endpoint adapters, request planning/execution, multi-call orchestration, retries/idempotency, quotas, credit accounting, fixtures and CLOCKED service tests.
+- **NaNLMind owns the receiving NaN-language side:** canonical NaN16 schemas, NANNET/HW3:0 ingress contract, evidence consumer, Boolean-derived 256 heads, HeadGate, LogicSessionTrainer, N16REL relation learner, M0-M9 native transformations, six-runner ring and canonical generation commits.
+- **HERMES owns the user interaction side:** autonomous mode planner, scoped CLOCKED gateway client, revisioned shared scratch, source reconciliation, NaN16 package construction, head-cortex client and final natural-language synthesis.
+
+The CLOCKED service implementation was moved into this repository under `integrations/clocked/`. NaNLMind retains only its receiving schemas, generic observation publisher, native C++ head demonstration, endpoint registry and durable evidence consumer. The native C++ demonstration remains with NaNLMind because it directly links to and exercises NaNLMind's native learner. The Python harness and upstream SDK/gateway remain here.
+
+### HERMES head cortex: extract the head primitive, not the runner ring
+
+The phrase “clone the runners and remove the runner code” should result in a lightweight HERMES **head-cortex facade** over the existing NaNLMind head API—not a fork of the six-runner distributed execution system.
+
+Reuse `HeadArray`, `HeadView`, `HeadRunner`, Boolean truth-table learning, `HeadGate`, `LogicSessionTrainer`, `N16REL/1` and the native relation learner. HERMES schedules bounded work over the existing 256 logical head IDs, receives relation/proof results and assembles them. It must not duplicate head state, runner membership, leader election, leases, ring synchronization, Koyeb volume control or canonical checkpoint ownership.
+
+### Two-pass synthesis
+
+1. HERMES freezes a scratch revision containing the user request and all typed CLOCKED outputs.
+2. It submits a signed NaN16 evidence package through the existing NANNET/HW3:0 route.
+3. NaNLMind runs the M0-M9 profile and Boolean-derived relation mapping, returning a relation graph, proof refs, active-head trace, conflicts and abstentions.
+4. HERMES synthesizes a natural-language draft from the evidence scratch and head response.
+5. HERMES submits that draft, with its claim-to-source map, as a second NaNLMind head-validation input.
+6. HERMES applies supported corrections and delivers the final response.
+7. A separate learning-admission path may create a candidate record; it cannot automatically turn an unverified CLOCKED response into a training target.
+
+### Self-modification
+
+Heads may propose bounded changes to Boolean truth tables, gate selection, relation-feature mappings and routing biases in isolated candidate states. Candidate mutations must pass exact truth-table regressions, deep-logic circuits, source-separated held-out tests, counterexamples, shuffled-label controls, no-CLOCKED baselines, calibration/abstention checks and deterministic replay. Changes remain reversible. Only the NaNLMind evaluator and six-runner generation barrier may promote canonical head state. No live chat turn may directly rewrite canonical executable code or weights.
+
+### Detailed implementation specification
+
+See [HERMES_AUTONOMOUS_CLOCKED_HEAD_CORTEX.md](HERMES_AUTONOMOUS_CLOCKED_HEAD_CORTEX.md) for the full autonomous mode policy, multi-source task graph, scratch lane schema, M0-M9 mapping, Boolean proof graphs, controlled head evolution, two-pass answer validation, CLI and acceptance tests.
