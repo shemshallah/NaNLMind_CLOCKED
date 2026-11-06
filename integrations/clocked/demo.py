@@ -213,13 +213,20 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--samples", type=Path,
                         default=Path(__file__).with_name("demo_samples.jsonl"))
-    parser.add_argument("--native-binary", type=Path, default=root / "build" / "clocked-demo")
+    configured_binary = os.environ.get("NANLM_CLOCKED_NATIVE_DEMO", "").strip()
+    parser.add_argument("--native-binary", type=Path,
+                        default=Path(configured_binary) if configured_binary else None,
+                        help="NaNLMind native demo binary built in the NaNLMind repository")
     parser.add_argument("--output-dir", type=Path, default=root / "build" / "clocked-demo-run")
     parser.add_argument("--fixture", action="store_true",
                         help="run offline with a clearly labelled deterministic Clocked stand-in")
     args = parser.parse_args(argv)
     try:
         samples = load_samples(args.samples)
+        if args.native_binary is None:
+            raise ValueError("provide --native-binary or NANLM_CLOCKED_NATIVE_DEMO; build it in NaNLMind with make build/clocked-demo")
+        if not args.native_binary.is_file():
+            raise ValueError("NaNLMind native demo binary does not exist: %s" % args.native_binary)
         mode = "fixture" if args.fixture else "live"
         result = run_demo(samples, mode, args.native_binary, args.output_dir)
         print(json.dumps(result, sort_keys=True))
