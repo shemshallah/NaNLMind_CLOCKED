@@ -1,0 +1,60 @@
+{"id":"technical_document-train-1","split":"train","expected_task_family":"technical_document","text":"technical architecture specification protocol"}
+{"id":"technical_document-train-2","split":"train","expected_task_family":"technical_document","text":"system design documentation technical interface"}
+{"id":"technical_document-train-3","split":"train","expected_task_family":"technical_document","text":"protocol architecture design specification"}
+{"id":"technical_document-train-4","split":"train","expected_task_family":"technical_document","text":"technical documentation system architecture"}
+{"id":"technical_document-train-5","split":"train","expected_task_family":"technical_document","text":"interface specification protocol design"}
+{"id":"technical_document-train-6","split":"train","expected_task_family":"technical_document","text":"architecture specification technical system"}
+{"id":"technical_document-train-7","split":"train","expected_task_family":"technical_document","text":"system protocol documentation design"}
+{"id":"technical_document-train-8","split":"train","expected_task_family":"technical_document","text":"technical design architecture protocol"}
+{"id":"code_or_script-train-1","split":"train","expected_task_family":"code_or_script","text":"python code script compiler"}
+{"id":"code_or_script-train-2","split":"train","expected_task_family":"code_or_script","text":"debug python function code"}
+{"id":"code_or_script-train-3","split":"train","expected_task_family":"code_or_script","text":"script compiler function python"}
+{"id":"code_or_script-train-4","split":"train","expected_task_family":"code_or_script","text":"python function code debugging"}
+{"id":"code_or_script-train-5","split":"train","expected_task_family":"code_or_script","text":"compiler script python code"}
+{"id":"code_or_script-train-6","split":"train","expected_task_family":"code_or_script","text":"code function script debug"}
+{"id":"code_or_script-train-7","split":"train","expected_task_family":"code_or_script","text":"python compiler code function"}
+{"id":"code_or_script-train-8","split":"train","expected_task_family":"code_or_script","text":"script debugging code python"}
+{"id":"support_request-train-1","split":"train","expected_task_family":"support_request","text":"customer support login password reset"}
+{"id":"support_request-train-2","split":"train","expected_task_family":"support_request","text":"help account login password support"}
+{"id":"support_request-train-3","split":"train","expected_task_family":"support_request","text":"support request reset account login"}
+{"id":"support_request-train-4","split":"train","expected_task_family":"support_request","text":"password reset customer help support"}
+{"id":"support_request-train-5","split":"train","expected_task_family":"support_request","text":"account support login reset password"}
+{"id":"support_request-train-6","split":"train","expected_task_family":"support_request","text":"help desk password account login"}
+{"id":"support_request-train-7","split":"train","expected_task_family":"support_request","text":"customer login support password help"}
+{"id":"support_request-train-8","split":"train","expected_task_family":"support_request","text":"reset password support account"}
+{"id":"general_prose-train-1","split":"train","expected_task_family":"general_prose","text":"meeting notes prose story report"}
+{"id":"general_prose-train-2","split":"train","expected_task_family":"general_prose","text":"general prose meeting story paragraph"}
+{"id":"general_prose-train-3","split":"train","expected_task_family":"general_prose","text":"report paragraph meeting notes writing"}
+{"id":"general_prose-train-4","split":"train","expected_task_family":"general_prose","text":"story prose report meeting notes"}
+{"id":"general_prose-train-5","split":"train","expected_task_family":"general_prose","text":"meeting paragraph general prose report"}
+{"id":"general_prose-train-6","split":"train","expected_task_family":"general_prose","text":"writing story meeting notes paragraph"}
+{"id":"general_prose-train-7","split":"train","expected_task_family":"general_prose","text":"general story prose report"}
+{"id":"general_prose-train-8","split":"train","expected_task_family":"general_prose","text":"meeting notes report prose"}
+{"id":"structured_record-train-1","split":"train","expected_task_family":"structured_record","text":"invoice receipt amount total due"}
+{"id":"structured_record-train-2","split":"train","expected_task_family":"structured_record","text":"payment invoice total amount receipt"}
+{"id":"structured_record-train-3","split":"train","expected_task_family":"structured_record","text":"receipt due amount payment total"}
+{"id":"structured_record-train-4","split":"train","expected_task_family":"structured_record","text":"invoice payment due total amount"}
+{"id":"structured_record-train-5","split":"train","expected_task_family":"structured_record","text":"structured receipt invoice amount due"}
+{"id":"structured_record-train-6","split":"train","expected_task_family":"structured_record","text":"total amount invoice payment receipt"}
+{"id":"structured_record-train-7","split":"train","expected_task_family":"structured_record","text":"due payment receipt total amount"}
+{"id":"structured_record-train-8","split":"train","expected_task_family":"structured_record","text":"invoice amount receipt due payment"}
+{"id":"unknown-train-1","split":"train","expected_task_family":"unknown","text":"weather forecast outside cloudy today"}
+{"id":"unknown-train-2","split":"train","expected_task_family":"unknown","text":"garden plants need water sunlight"}
+{"id":"unknown-train-3","split":"train","expected_task_family":"unknown","text":"mountain trail hiking weekend plans"}
+{"id":"unknown-train-4","split":"train","expected_task_family":"unknown","text":"music playlist favorite songs today"}
+{"id":"unknown-train-5","split":"train","expected_task_family":"unknown","text":"sports score match weekend schedule"}
+{"id":"unknown-train-6","split":"train","expected_task_family":"unknown","text":"cooking recipe ingredients dinner tonight"}
+{"id":"unknown-train-7","split":"train","expected_task_family":"unknown","text":"travel packing suitcase airport itinerary"}
+{"id":"unknown-train-8","split":"train","expected_task_family":"unknown","text":"pet dog cat animal park outdoors"}
+{"id":"technical_document-heldout-1","split":"test","expected_task_family":"technical_document","text":"technical protocol architecture overview design"}
+{"id":"technical_document-heldout-2","split":"test","expected_task_family":"technical_document","text":"system specification documentation architecture"}
+{"id":"code_or_script-heldout-1","split":"test","expected_task_family":"code_or_script","text":"python script function compiler debug"}
+{"id":"code_or_script-heldout-2","split":"test","expected_task_family":"code_or_script","text":"code compiler python function"}
+{"id":"support_request-heldout-1","split":"test","expected_task_family":"support_request","text":"customer login account password reset help"}
+{"id":"support_request-heldout-2","split":"test","expected_task_family":"support_request","text":"support help desk reset login password"}
+{"id":"general_prose-heldout-1","split":"test","expected_task_family":"general_prose","text":"meeting story report prose paragraph"}
+{"id":"general_prose-heldout-2","split":"test","expected_task_family":"general_prose","text":"general writing notes prose meeting"}
+{"id":"structured_record-heldout-1","split":"test","expected_task_family":"structured_record","text":"invoice receipt payment total due amount"}
+{"id":"structured_record-heldout-2","split":"test","expected_task_family":"structured_record","text":"receipt invoice amount due payment"}
+{"id":"unknown-heldout-1","split":"test","expected_task_family":"unknown","text":"cloudy weather forecast garden trail"}
+{"id":"unknown-heldout-2","split":"test","expected_task_family":"unknown","text":"music cooking travel weekend plans"}
