@@ -47,3 +47,25 @@ CLOCKED Pipeline is sequential and operates on one text input. HERMES multi-sour
 The canonical NaNLMind event schemas, endpoint observation publisher, durable evidence consumer, native head demo and six-runner training topology remain in `shemshallah/NaNLMind`. See [the NaNLMind CLOCKED/NANNET bridge](https://github.com/shemshallah/NaNLMind/blob/main/docs/73_CLOCKED_NANNET_BRIDGE.md) and [chainable training contract](https://github.com/shemshallah/NaNLMind/blob/main/specs/CLOCKED_CHAINABLE_TRAINING.md).
 
 The current native demo is a bounded task-family routing experiment, not a general language model or proof of production model improvement. Fixture results are simulated; live results must retain the actual CLOCKED receipt and cost metadata.
+
+## Native NaNLMind routing demonstration
+
+The native learner executable is intentionally built and owned by NaNLMind.
+From a NaNLMind checkout, build it with:
+
+```sh
+make build/clocked-demo
+```
+
+Then run this repository's Python harness with the resulting binary path:
+
+```sh
+python integrations/clocked/demo.py --fixture \
+  --native-binary /absolute/path/to/NaNLMind/build/clocked-demo
+```
+
+For a live run, omit `--fixture` and configure `CLOCKED_INTAKE_URL` plus a
+scoped `CLOCKED_USER_API`. The harness never sends held-out examples to
+CLOCKED. Only labels matching an independent gold label enter the native demo.
+The C++ learner remains in NaNLMind because it directly exercises NaNLMind's
+native routing/head implementation; this repository owns the service harness.
