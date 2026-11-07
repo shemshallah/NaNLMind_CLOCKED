@@ -17,6 +17,7 @@ python -m pip install -r integrations/clocked/requirements.txt
 - `CLOCKED_API_KEY`: upstream CLOCKED key, server-side only.
 - `CLOCKED_GATEWAY_ADMIN_TOKEN`: separate gateway administrator credential.
 - `CLOCKED_TOKEN_PEPPER`: random secret for participant-token hashing.
+- `CLOCKED_RESULT_ENCRYPTION_KEY`: Fernet key used to encrypt multi-endpoint result/idempotency cache entries at rest; required before `/v1/tasks` will execute.
 - `CLOCKED_GATEWAY_DB`: protected persistent database path.
 - `CLOCKED_GATEWAY_HOST` and `CLOCKED_GATEWAY_PORT`: bind configuration.
 
@@ -77,7 +78,11 @@ version-1 task plan. The request carries an idempotency key and the participant
 token; the privileged `CLOCKED_API_KEY` remains exclusively server-side.
 
 The plan schema is
-[`task-plan.schema.json`](task-plan.schema.json). It allows at most 16
+[`task-plan.schema.json`](task-plan.schema.json). Multi-endpoint results are
+encrypted in the durable idempotency cache using `CLOCKED_RESULT_ENCRYPTION_KEY`;
+the gateway fails closed before billing if encryption is unavailable. Keep this
+key in the service secret store and preserve it across restarts so cached
+responses remain decryptable. It allows at most 16
 ordered tasks, each using one of the SDK endpoint methods:
 `decide`, `extract`, `fill`, `pii`, `injection`, `script`,
 `grounding`, `compare`, `rerank`, or `pipeline`. Dependencies must refer
