@@ -66,6 +66,7 @@ jobs:
           base = os.environ["CLOCKED_GATEWAY_URL"].rstrip("/")
           body = json.dumps({
               "instance_label": "github-actions-live-demo",
+              "consent": True,
               "max_requests": 100,
               "ttl_seconds": 21600,
           }).encode()
