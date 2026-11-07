@@ -58,14 +58,28 @@ Never commit CLOCKED API keys, gateway admin tokens, participant tokens, private
 
 ## Koyeb demo gateway and multi-instance auth
 
-The root Dockerfile deploys the CLOCKED gateway as a persistent Koyeb web
-service. The upstream `CLOCKED_API_KEY` remains in the CLOCKED adapter's Koyeb secrets and is never returned to participants. Demo clients obtain a scoped CLOCKED token from `POST /auth/demo-token`; the adapter registers the instance with the existing Koyeb NANNET authority and returns a separate scoped NANNET endpoint token.
+The Clocked gateway is embedded in the existing NaNLMind Koyeb NANNET service.
+Do not deploy this repository as a separate Koyeb service. The existing
+NaNLMind root Dockerfile installs the adapter from
+`integrations/nannet/clocked_gateway.py` and mounts its routes in the existing
+`integrations/nannet/server.py` process.
 
-The CLOCKED adapter delegates registration and lowest-free allocation to the existing Koyeb NANNET authority. Demo enrollment requires explicit participant consent before any NANNET device registration is created. NANNET allocates HW8–HW254, mapping to node points `9..255`, and returns a scoped `nnt_` endpoint token and active lease. CLOCKED binds that identity to a separate request-limited `clu_` token; the upstream API key never leaves the server. Revocation disables CLOCKED access and asks NANNET to release the lease. See [Koyeb deployment and secret setup](deploy/koyeb/README.md).
+The upstream `CLOCKED_API_KEY` belongs in the existing NaNLMind Koyeb service's
+secret environment and is never returned to participants. Demo clients obtain
+a scoped CLOCKED token from `POST /auth/demo-token`; that same process calls
+its own NANNET registration routes to allocate the lowest-free HW8–HW254 slot
+(node points `9..255`). It returns scoped `clu_` and `nnt_` participant
+credentials while keeping the upstream API key server-side. Revocation
+disables CLOCKED access and asks the same NANNET allocator to release the lease.
+
+Configure `NANNET_URL` as the public HTTPS origin of the existing NaNLMind
+service itself. Configure the Clocked secrets listed in
+[`integrations/nannet/README.md`](https://github.com/shemshallah/NaNLMind/blob/main/integrations/nannet/README.md).
+There is one Koyeb service, one process and one persistent volume.
 
 ## Manually gated live demo workflow
 
-After the Koyeb gateway is deployed and its secrets are configured, run the
+After the existing NaNLMind Koyeb service has the Clocked secrets configured, run the
 `CLOCKED live demo` GitHub Actions workflow with `confirm_live_calls=true`.
 It uses the Actions-side `CLOCKED_API_KEY` for a one-request credential smoke
 test, asks Koyeb for one scoped demo-instance token, builds the native learner
@@ -75,5 +89,5 @@ sample demo against Koyeb. The live job is disabled by default and requires an e
 Add these GitHub Actions repository secrets:
 
 - `CLOCKED_API_KEY` — upstream credential for the one-request Actions smoke test.
-- `CLOCKED_GATEWAY_URL` — deployed Koyeb gateway base URL (HTTPS).
+- `CLOCKED_GATEWAY_URL` — existing NaNLMind Koyeb service base URL (HTTPS).
 - `CLOCKED_DEMO_ENROLLMENT_TOKEN` — same enrollment secret configured on Koyeb.
