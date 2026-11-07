@@ -112,6 +112,8 @@ class Gateway:
             return self.issue_token(environ, start_response)
         if method == "POST" and path == "/v1/experience":
             return self.run_experience(environ, start_response)
+        if method == "POST" and path == "/v1/tasks":
+            return self.run_tasks(environ, start_response)
         if method == "POST" and path == "/v1/observations":
             return self.accept_observation(environ, start_response)
         if method == "GET" and path == "/internal/observations":
@@ -345,6 +347,137 @@ class Gateway:
             return json_response(start_response, "200 OK", payload)
         except Exception:
             payload = {"error": "upstream_unavailable"}
+            self.complete_experience(identity["token_hash"], request_key,
+                                      "502 Bad Gateway", payload)
+            return json_response(start_response, "502 Bad Gateway", payload)
+
+
+    def run_tasks(self, environ, start_response):
+        """Execute a bounded list of independent typed CLOCKED endpoint calls."""
+        try:
+            length = int(environ.get("CONTENT_LENGTH") or "0")
+            if length <= 0 or length > 1_048_576:
+                raise ValueError("task_body_size_out_of_range")
+            raw = environ["wsgi.input"].read(length)
+            data = json.loads(raw.decode("utf-8"))
+            if not isinstance(data, dict) or data.get("protocol") != "nanlm.clocked-task-plan" or data.get("version") != 1:
+                raise ValueError("unsupported_task_protocol")
+            plan = data.get("plan")
+            if not isinstance(plan, dict) or plan.get("schema") != "nanlm.clocked-task-plan/1":
+                raise ValueError("invalid_task_plan")
+            tasks = plan.get("tasks")
+            if not isinstance(tasks, list) or not 1 <= len(tasks) <= 16:
+                raise ValueError("task_count_out_of_range")
+            seen = set()
+            total_bytes = 0
+            allowed = {"decide", "extract", "fill", "pii", "injection",
+                       "script", "grounding", "compare", "rerank", "pipeline"}
+            for task in tasks:
+                if not isinstance(task, dict):
+                    raise ValueError("invalid_task")
+                task_id = task.get("id")
+                endpoint = task.get("endpoint")
+                text = task.get("text")
+                if not isinstance(task_id, str) or not task_id or task_id in seen:
+                    raise ValueError("invalid_or_duplicate_task_id")
+                if endpoint not in allowed:
+                    raise ValueError("unsupported_endpoint")
+                if not isinstance(text, str) or not text.strip():
+                    raise ValueError("task_text_required")
+                deps = task.get("depends_on", [])
+                if not isinstance(deps, list) or any(dep not in seen for dep in deps):
+                    raise ValueError("dependencies_must_reference_prior_tasks")
+                options = task.get("options", {})
+                if not isinstance(options, dict) or len(json.dumps(options)) > 8192:
+                    raise ValueError("invalid_task_options")
+                total_bytes += len(text.encode("utf-8"))
+                seen.add(task_id)
+            if total_bytes > 1_048_576:
+                raise ValueError("task_input_limit_exceeded")
+        except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            return json_response(start_response, "400 Bad Request", {"error": str(exc)[:96]})
+
+        authorization = environ.get("HTTP_AUTHORIZATION", "")
+        token = authorization[7:] if authorization.startswith("Bearer ") else ""
+        request_key = environ.get("HTTP_IDEMPOTENCY_KEY", "")
+        if request_key and not IDEMPOTENCY_KEY.fullmatch(request_key):
+            return json_response(start_response, "400 Bad Request", {"error": "invalid_idempotency_key"})
+        body_sha256 = hashlib.sha256(json.dumps(
+            data, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")).hexdigest()
+        identity, cached, error, error_status = self.reserve_experience(
+            token, request_key, body_sha256
+        )
+        if error:
+            return json_response(start_response, error_status, {"error": error})
+        if cached is not None:
+            return json_response(start_response, cached[0], cached[1])
+
+        try:
+            client = self.clocked_client
+            if client is None:
+                if not os.environ.get("CLOCKED_API_KEY"):
+                    raise RuntimeError("clocked_upstream_not_configured")
+                from clocked_sdk import Clocked
+                client_context = Clocked()
+            else:
+                client_context = None
+
+            def execute_with(active_client):
+                results = []
+                for task in tasks:
+                    endpoint = task["endpoint"]
+                    source_text = task["text"]
+                    options = dict(task.get("options", {}))
+                    if endpoint == "pipeline":
+                        response = active_client.pipeline(
+                            text=source_text, steps=build_pipeline(source_text),
+                            on_error="continue")
+                    else:
+                        operation = getattr(active_client, endpoint, None)
+                        if not callable(operation):
+                            raise RuntimeError("clocked_endpoint_not_available:" + endpoint)
+                        response = operation(text=source_text, **options)
+                    try:
+                        result_data = dict(response)
+                    except (TypeError, ValueError):
+                        result_data = {"result": str(response)[:4096]}
+                    event = make_event(source_text, {
+                        "steps": [{"endpoint": endpoint, "status": 200,
+                                   "result": result_data}],
+                    }, response)
+                    results.append({
+                        "task_id": task["id"], "endpoint": endpoint,
+                        "source_id": task.get("source_id"),
+                        "result_type": endpoint, "status": "ok",
+                        "result": result_data, "provenance": {
+                            "event_id": event["event_id"],
+                            "input_sha256": event["input_sha256"],
+                            "response_sha256": event["response_sha256"],
+                            "observed_at": event["observed_at"],
+                            "credits": event.get("credits"),
+                            "cost_usd": event.get("cost_usd"),
+                            "cost_basis": event.get("cost_basis"),
+                            "model_ms": event.get("timing"),
+                        },
+                    })
+                return results
+
+            if client_context is None:
+                results = execute_with(client)
+            else:
+                with client_context as active_client:
+                    results = execute_with(active_client)
+            payload = {
+                "protocol": "nanlm.clocked-task-results", "version": 1,
+                "plan_id": plan.get("plan_id"), "results": results,
+                "learning_state": "awaiting_nanlmind_ingest",
+                "quota_remaining": identity["remaining"],
+            }
+            self.complete_experience(identity["token_hash"], request_key, "200 OK", payload)
+            return json_response(start_response, "200 OK", payload)
+        except Exception:
+            payload = {"error": "clocked_task_execution_failed"}
             self.complete_experience(identity["token_hash"], request_key,
                                       "502 Bad Gateway", payload)
             return json_response(start_response, "502 Bad Gateway", payload)
