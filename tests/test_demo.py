@@ -35,7 +35,7 @@ class ClockedDemoTests(unittest.TestCase):
         )
         self.binary = self.root / "fake-native-demo"
         self.binary.write_text(
-            "#!/usr/bin/env python3\n"
+            "#!/usr/bin/env python3\nimport sys\n"
             "import json, pathlib, sys\n"
             "rows = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines()\n"
             "print(json.dumps({'seen_rows': len(rows), 'native_ok': True}))\n",
@@ -115,8 +115,8 @@ class ClockedDemoTests(unittest.TestCase):
 
     def test_native_failure_cleans_up_temporary_source_tsv(self):
         self.binary.write_text(
-            "#!/usr/bin/env python3\\nimport sys\\n"
-            "print('native failure', file=sys.stderr)\\nsys.exit(2)\\n",
+            "#!/usr/bin/env python3\nimport sys\n"
+            "print('native failure', file=sys.stderr)\nsys.exit(2)\n",
             encoding="utf-8",
         )
         self.binary.chmod(0o755)
