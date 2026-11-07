@@ -95,3 +95,18 @@ committed to NaNLMind training state.
 `/v1/experience` remains the legacy one-input pipeline endpoint. HERMES
 multi-source plans use separate endpoint calls through `/v1/tasks`; they do
 not model CLOCKED Pipeline as a parallel DAG.
+
+
+## Offline demo regression checks
+
+Run the demo harness tests without CLOCKED credentials or paid API calls:
+
+```sh
+python -m unittest discover -s tests -p 'test_demo.py' -v
+```
+
+The tests use a temporary fake native executable and verify that held-out samples
+are never sent to CLOCKED, source text is not written to the durable event log,
+and only verified training labels are passed to the native demo. For an actual
+native fixture run, build `build/clocked-demo` in the NaNLMind checkout and run
+the `demo.py --fixture --native-binary ...` command above.
