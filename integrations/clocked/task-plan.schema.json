@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/shemshallah/NaNLMind_CLOCKED/blob/main/integrations/clocked/task-plan.schema.json",
+  "title": "NaNLMind CLOCKED task plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "plan_id",
+    "tasks"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nanlm.clocked-task-plan/1"
+    },
+    "version": {
+      "const": 1
+    },
+    "plan_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "endpoint",
+          "text",
+          "depends_on"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "source_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "endpoint": {
+            "enum": [
+              "decide",
+              "extract",
+              "fill",
+              "pii",
+              "injection",
+              "script",
+              "grounding",
+              "compare",
+              "rerank",
+              "pipeline"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 65536
+          },
+          "depends_on": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "options": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}
