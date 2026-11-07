@@ -2,6 +2,7 @@
 set -eu
 
 : "${CLOCKED_API_KEY:?CLOCKED_API_KEY must be configured in Koyeb secrets}"
+: "${NANNET_URL:?NANNET_URL must point to the deployed NANNET HTTPS service}"
 : "${CLOCKED_GATEWAY_ADMIN_TOKEN:?CLOCKED_GATEWAY_ADMIN_TOKEN must be configured}"
 : "${CLOCKED_DEMO_ENROLLMENT_TOKEN:?CLOCKED_DEMO_ENROLLMENT_TOKEN must be configured}"
 : "${CLOCKED_TOKEN_PEPPER:?CLOCKED_TOKEN_PEPPER must be configured}"
