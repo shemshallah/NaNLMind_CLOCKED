@@ -4,6 +4,15 @@
 #include <string.h>
 
 static int failures = 0;
+
+static int fake_post(const char *url, const char *body, size_t body_len,
+                     char *response, size_t response_capacity, void *user_data)
+{
+    (void)user_data;
+    if (!url || !body || body_len == 0) return 0;
+    snprintf(response, response_capacity, "{\"ok\":true}");
+    return 1;
+}
 #define CHECK(condition) do { if (!(condition)) { \
     fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #condition); ++failures; } } while (0)
 
@@ -39,6 +48,9 @@ int main(void)
     CHECK(strstr(body, "\"slot\":4") != NULL);
     CHECK(clocked_nannet_auth_header("clu_test", auth, sizeof(auth)));
     CHECK(strcmp(auth, "Authorization: Bearer clu_test") == 0);
+    CHECK(clocked_nannet_login("https://portal.example", "id.token",
+                               4, fake_post, body, sizeof(body), NULL));
+    CHECK(strcmp(body, "{\"ok\":true}") == 0);
     CHECK(clocked_nan16_eval_bool(6u, 0xAAAAAAAAu, 0x55555555u) == 0xFFFFFFFFu);
     CHECK(clocked_nan16_eval_bool(0u, 1u, 1u) == 0u);
     if (failures) return 1;

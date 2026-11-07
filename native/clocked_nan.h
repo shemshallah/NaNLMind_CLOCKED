@@ -49,6 +49,17 @@ int clocked_nannet_login_body(const char *id_token, uint8_t slot,
 int clocked_nannet_auth_header(const char *bearer_token,
                                char *out, size_t capacity);
 
+/* Portable transport hook. Implement this with libcurl, mbedTLS, Android JNI,
+ * or an embedded HTTP stack. The body is the JSON from
+ * clocked_nannet_login_body. */
+typedef int (*clocked_http_post_fn)(const char *url, const char *body,
+                                    size_t body_len, char *response,
+                                    size_t response_capacity, void *user_data);
+int clocked_nannet_login(const char *portal_url, const char *id_token,
+                         uint8_t slot, clocked_http_post_fn post,
+                         char *response, size_t response_capacity,
+                         void *user_data);
+
 /* NaN16 Boolean evaluation, matching NaNLMind's 32-lane table. */
 uint32_t clocked_nan16_eval_bool(uint8_t opcode, uint32_t a, uint32_t b);
 

@@ -213,6 +213,24 @@ int clocked_nannet_auth_header(const char *bearer_token,
     return written > 0 && (size_t)written < capacity;
 }
 
+int clocked_nannet_login(const char *portal_url, const char *id_token,
+                         uint8_t slot, clocked_http_post_fn post,
+                         char *response, size_t response_capacity,
+                         void *user_data)
+{
+    char body[8192];
+    char url[2048];
+    int written;
+    if (!portal_url || !portal_url[0] || !post || !response ||
+        response_capacity < 2) return 0;
+    written = snprintf(url, sizeof(url), "%s%s/v1/bootstrap/oidc",
+                       portal_url,
+                       portal_url[strlen(portal_url) - 1] == '/' ? "" : "/");
+    if (written <= 0 || (size_t)written >= sizeof(url)) return 0;
+    if (!clocked_nannet_login_body(id_token, slot, body, sizeof(body))) return 0;
+    return post(url, body, strlen(body), response, response_capacity, user_data);
+}
+
 uint32_t clocked_nan16_eval_bool(uint8_t opcode, uint32_t a, uint32_t b)
 {
     uint32_t result = 0;
