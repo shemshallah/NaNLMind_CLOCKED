@@ -1,6 +1,6 @@
 # NaNLMind_CLOCKED
 
-CLOCKED by Rezolve.ai integration service, multi-endpoint orchestration, evidence packaging and the HERMES autonomous cognition bridge.
+CLOCKED by Rezolve.ai SDK integration, multi-endpoint orchestration, evidence packaging and the HERMES autonomous cognition bridge. The service adapter is hosted inside the existing NaNLMind Koyeb deployment.
 
 ## Canonical design documents
 
@@ -9,7 +9,7 @@ CLOCKED by Rezolve.ai integration service, multi-endpoint orchestration, evidenc
 
 ## Repository boundary
 
-- **This repository:** upstream CLOCKED SDK/API client, gateway, credentials, task graph, endpoint orchestration, request idempotency, quotas, credit accounting, fixtures and service tests.
+- **This repository:** upstream CLOCKED SDK/API client, task graph, endpoint orchestration, request idempotency, quotas, credit accounting, fixtures and service tests; gateway source is maintained in NaNLMind's existing Koyeb service.
 - **NaNLMind:** NaN16 protocol and schemas, native Boolean heads, relation learner, M0-M9 transformation pipeline, evidence consumer, six-runner ring and canonical learning commits.
 - **HERMES:** autonomous mode planner, user-facing scratch, cross-source synthesis, head-cortex client and final answer rendering.
 - **NaNNet / NaNROUTER / Koyeb:** authenticated transport, HW3:0 route, policy and persistent gateway infrastructure.
@@ -70,7 +70,7 @@ After the Koyeb gateway is deployed and its secrets are configured, run the
 It uses the Actions-side `CLOCKED_API_KEY` for a one-request credential smoke
 test, asks Koyeb for one scoped demo-instance token, builds the native learner
 from the canonical NaNLMind repository, and runs the 48-training / 12-held-out
-sample demo against Koyeb. The live job is disabled by default and requires an explicit manual confirmation because it makes billable upstream calls. The CLOCKED adapter's Koyeb service must have `NANNET_URL` configured, and the NANNET service should use `NANLM_DEVICE_LEASE_SECONDS=21600` for the six-hour demo lease.
+sample demo against Koyeb. The live job is disabled by default and requires an explicit manual confirmation because it makes billable upstream calls. The existing NaNLMind Koyeb service must have `NANNET_URL` set to its own public HTTPS origin and `NANLM_DEVICE_LEASE_SECONDS=21600` for the six-hour demo lease.
 
 Add these GitHub Actions repository secrets:
 
