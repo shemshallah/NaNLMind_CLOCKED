@@ -86,8 +86,8 @@ test, asks Koyeb for one scoped demo-instance token, builds the native learner
 from the canonical NaNLMind repository, and runs the 48-training / 12-held-out
 sample demo against Koyeb. The live job is disabled by default and requires an explicit manual confirmation because it makes billable upstream calls. The existing NaNLMind Koyeb service must have `NANNET_URL` set to its own public HTTPS origin and `NANLM_DEVICE_LEASE_SECONDS=21600` for the six-hour demo lease.
 
-Add these GitHub Actions repository secrets:
+Add these GitHub Actions settings:
 
-- `CLOCKED_API_KEY` — upstream credential for the one-request Actions smoke test.
-- `CLOCKED_GATEWAY_URL` — existing NaNLMind Koyeb service base URL (HTTPS).
-- `CLOCKED_DEMO_ENROLLMENT_TOKEN` — same enrollment secret configured on Koyeb.
+- Secret `CLOCKED_API_KEY` — upstream credential for the one-request Actions smoke test.
+- Variable `NANNET_URL` (or existing `BSR0_PORTAL_API`) — the existing NaNLMind Koyeb service base URL (HTTPS); the workflow uses it for `CLOCKED_GATEWAY_URL`.
+- Secret `CLOCKED_DEMO_ENROLLMENT_TOKEN` — same enrollment secret configured on the existing NaNLMind Koyeb service.
