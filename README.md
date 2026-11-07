@@ -55,3 +55,17 @@ See `native/README.md` and run `make -C native test`.
 ## Security
 
 Never commit CLOCKED API keys, gateway admin tokens, participant tokens, private source corpora or raw customer responses. Use server-side secrets and scoped, expiring participant credentials. Raw evidence belongs in an ACL-protected scratch store under explicit retention rules, not in Git or minimized telemetry.
+
+## Koyeb demo gateway and multi-instance auth
+
+The root Dockerfile deploys the CLOCKED gateway as a persistent Koyeb web
+service. The upstream `CLOCKED_API_KEY` remains in Koyeb secrets and is never
+returned to participants. Demo clients obtain short-lived scoped tokens from
+`POST /auth/demo-token` using the separate `CLOCKED_DEMO_ENROLLMENT_TOKEN`.
+
+The token issuer atomically assigns the lowest free overbootstrap node point
+in `9..255` to each active demo instance. Points `0..8` stay reserved. The
+response explicitly reports `reserved_pending_nannet_registration`; a token
+reservation is not represented as a completed NANNET registration or route
+commit. Revoke an instance with the admin-only
+`POST /admin/instances/revoke` route. See [Koyeb deployment and secret setup](deploy/koyeb/README.md).
