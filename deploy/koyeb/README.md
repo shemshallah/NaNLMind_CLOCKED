@@ -10,6 +10,7 @@ short-lived `clu_` tokens; they never receive `CLOCKED_API_KEY`.
 - Service type: Web
 - Port: `8080`
 - Health check: HTTP `GET /healthz`
+- Environment setting: `NANNET_URL` points to the existing Koyeb NANNET auth/control-plane service (HTTPS)
 - Persistent volume: mount at `/data`
 - Replicas: **1** while using the local SQLite volume allocator
 - Container runs as UID/GID `10001:10001`
@@ -52,11 +53,7 @@ JSON body:
 {"instance_label":"demo-participant-01","max_requests":50,"ttl_seconds":21600}
 ```
 
-The service transactionally reserves the **lowest currently available node
-point in 9..255**, then issues a unique, expiring, request-limited token. The
-caller cannot select or override a point. Concurrent issuance is serialized
-with SQLite `BEGIN IMMEDIATE`, so two participants cannot receive the same
-active point. Expired and revoked reservations are reclaimed.
+The CLOCKED adapter calls the NANNET registration service, which transactionally assigns the **lowest currently available HW slot 8..254**, mapping to node point **9..255**. NANNET issues the endpoint's `nnt_` token and lease; the CLOCKED adapter binds that address to its own unique, expiring, request-limited `clu_` token. The caller cannot select or override a point. NANNET is the single allocation authority, so concurrent issuance across services cannot duplicate a lease. The CLOCKED database stores only a local audit mirror and an encrypted copy of the NANNET token for lease release.
 
 The response includes `token`, `instance_id`, `node_point`, and
 `registration_state`. The point is a reserved overbootstrap **node point**,
@@ -69,7 +66,7 @@ identity but does not claim to have completed a signed NANNET registration or
 committed a route. The route authority must still confirm that step before the
 instance is treated as a routable network endpoint.
 
-Revoke a participant and release its point using the admin token:
+Revoke a participant and release its NANNET lease using the admin token. CLOCKED access is disabled before the remote release; if NANNET reports pending work, the route remains leased until that work is committed/rejected and the admin retries:
 
 ```sh
 curl -X POST "$CLOCKED_GATEWAY_URL/admin/instances/revoke" \
@@ -84,7 +81,9 @@ curl -X POST "$CLOCKED_GATEWAY_URL/admin/instances/revoke" \
 2. Send that token to `/v1/experience` or `/v1/tasks`.
 3. The gateway calls CLOCKED with its server-side `CLOCKED_API_KEY`.
 4. Returned events carry the assigned `node_point` and `instance_id`.
-5. NaNLMind still treats results as evidence awaiting its own validation and
+5. The NANNET token is the endpoint's scoped identity for NANNET routes and
+   evidence intake. The CLOCKED token authorizes only CLOCKED SDK operations.
+6. NaNLMind still treats results as evidence awaiting its own validation and
    ingest; CLOCKED does not write canonical heads or route tables.
 
 ## Local verification
@@ -106,3 +105,12 @@ GitHub Actions secrets: `CLOCKED_API_KEY`, `CLOCKED_GATEWAY_URL`, and
 secret. The live workflow defaults to disabled and makes one direct credential
 smoke call plus the 48 training-split CLOCKED calls only after explicit manual
 confirmation. The 12 held-out rows are never sent to CLOCKED.
+
+
+## NANNET lease setting
+
+On the **NANNET Koyeb service**, set the non-secret environment variable
+`NANLM_DEVICE_LEASE_SECONDS=21600` for the six-hour demo lease horizon. NANNET
+is the authoritative allocator and must retain its own persistent `/data`
+volume and a single service replica while using SQLite. Set `NANNET_URL` on the
+CLOCKED adapter to that service's public HTTPS origin.
