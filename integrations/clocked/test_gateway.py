@@ -2,6 +2,7 @@ import io
 import json
 import os
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -83,7 +84,7 @@ class GatewayTests(unittest.TestCase):
         self.result_key = Fernet.generate_key().decode("ascii")
         self.env = patch.dict(os.environ, {
             "CLOCKED_RESULT_ENCRYPTION_KEY": self.result_key,
-            "CLOCKED_TOKEN_PEPPER": "test-only-pepper",
+            "CLOCKED_TOKEN_PEPPER": "test-only-pepper-0123456789abcdef",
             "CLOCKED_GATEWAY_ADMIN_TOKEN": "admin-test-token",
             "NANLM_RUNNER_INGEST_TOKEN": "runner-test-token",
             "CLOCKED_DEMO_ENROLLMENT_TOKEN": "enroll-test-token",
