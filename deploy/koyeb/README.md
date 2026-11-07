@@ -96,3 +96,13 @@ docker build -t nanlmind-clocked-gateway .
 ```
 
 The live API key is never required for offline tests.
+
+
+## GitHub Actions live demo
+
+The repository's manually gated `CLOCKED live demo` workflow also needs these
+GitHub Actions secrets: `CLOCKED_API_KEY`, `CLOCKED_GATEWAY_URL`, and
+`CLOCKED_DEMO_ENROLLMENT_TOKEN`. The enrollment token must match the Koyeb
+secret. The live workflow defaults to disabled and makes one direct credential
+smoke call plus the 48 training-split CLOCKED calls only after explicit manual
+confirmation. The 12 held-out rows are never sent to CLOCKED.
