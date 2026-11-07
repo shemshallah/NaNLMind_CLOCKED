@@ -48,10 +48,11 @@ Do not reuse the provider API key as any of these values.
 ## Multiple demo instances and node points
 
 `POST /auth/demo-token` accepts the enrollment bearer token and a bounded
-JSON body:
+JSON body. The participant must explicitly set `consent` to `true`; otherwise
+no NANNET registration is attempted:
 
 ```json
-{"instance_label":"demo-participant-01","max_requests":50,"ttl_seconds":21600}
+{"instance_label":"demo-participant-01","consent":true,"max_requests":50,"ttl_seconds":21600}
 ```
 
 The CLOCKED adapter calls the NANNET registration service, which transactionally assigns the **lowest currently available HW slot 8..254**, mapping to node point **9..255**. NANNET issues the endpoint's `nnt_` token and lease; the CLOCKED adapter binds that address to its own unique, expiring, request-limited `clu_` token. The caller cannot select or override a point. NANNET is the single allocation authority, so concurrent issuance across services cannot duplicate a lease. The CLOCKED database stores only a local audit mirror and an encrypted copy of the NANNET token for lease release.
