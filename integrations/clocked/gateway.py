@@ -227,7 +227,8 @@ class Gateway:
         try:
             with urlopen(request, timeout=20) as response:
                 raw = response.read(65536)
-                status = int(getattr(response, "status", response.getcode()))
+                status_value = getattr(response, "status", None)
+                status = int(status_value if status_value is not None else response.getcode())
         except HTTPError as exc:
             raw = exc.read(65536)
             status = int(exc.code)
@@ -408,19 +409,27 @@ class Gateway:
                 raise ValueError("provide exactly one instance_id or node_point")
         except (ValueError, TypeError) as exc:
             return json_response(start_response, "400 Bad Request", {"error": str(exc)[:64]})
+
         db = connect_db(self.db_path)
         try:
+            db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "SELECT token_hash,node_point,nannet_token_ciphertext FROM demo_instances WHERE " + where,
                 (value,),
             ).fetchone()
+            if row is None:
+                db.rollback()
+                return json_response(start_response, "404 Not Found", {"error": "instance_not_found"})
+            if not row["nannet_token_ciphertext"]:
+                db.rollback()
+                return json_response(start_response, "409 Conflict",
+                                     {"error": "nannet_registration_missing_manual_review_required"})
+            # Disable CLOCKED access before asking NANNET to release its lease.
+            db.execute("UPDATE demo_tokens SET revoked=1 WHERE token_hash=?", (row["token_hash"],))
+            db.commit()
         finally:
             db.close()
-        if row is None:
-            return json_response(start_response, "404 Not Found", {"error": "instance_not_found"})
-        if not row["nannet_token_ciphertext"]:
-            return json_response(start_response, "409 Conflict",
-                                 {"error": "nannet_registration_missing_manual_review_required"})
+
         try:
             nannet_token = _result_fernet().decrypt(
                 row["nannet_token_ciphertext"].encode("ascii")
@@ -430,22 +439,23 @@ class Gateway:
             )
         except (RuntimeError, ValueError):
             return json_response(start_response, "502 Bad Gateway",
-                                 {"error": "nannet_release_unavailable"})
+                                 {"error": "nannet_release_unavailable",
+                                  "clocked_token_revoked": True})
         if release_status == 409:
             return json_response(start_response, "409 Conflict", {
                 "error": "nannet_instance_has_pending_work",
                 "node_point": int(row["node_point"]),
+                "clocked_token_revoked": True,
             })
         if release_status != 200:
             return json_response(start_response, "502 Bad Gateway", {
                 "error": "nannet_release_failed",
                 "nannet_status": release_status,
+                "clocked_token_revoked": True,
             })
         db = connect_db(self.db_path)
         try:
-            db.execute("BEGIN IMMEDIATE")
             db.execute("UPDATE demo_instances SET revoked=1 WHERE " + where, (value,))
-            db.execute("UPDATE demo_tokens SET revoked=1 WHERE token_hash=?", (row["token_hash"],))
             db.commit()
         finally:
             db.close()
