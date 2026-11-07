@@ -31,6 +31,20 @@ def token_hash(token: str, pepper: str) -> str:
     return hashlib.sha256((pepper + token).encode("utf-8")).hexdigest()
 
 
+def _result_fernet():
+    key = os.environ.get("CLOCKED_RESULT_ENCRYPTION_KEY", "")
+    if not key:
+        raise RuntimeError("CLOCKED_RESULT_ENCRYPTION_KEY is required for encrypted result caching")
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError as exc:
+        raise RuntimeError("cryptography is required for encrypted result caching") from exc
+    try:
+        return Fernet(key.encode("ascii"))
+    except Exception as exc:
+        raise RuntimeError("CLOCKED_RESULT_ENCRYPTION_KEY must be a valid Fernet key") from exc
+
+
 def connect_db(path: str) -> sqlite3.Connection:
     db = sqlite3.connect(path, timeout=10)
     db.row_factory = sqlite3.Row
@@ -249,7 +263,11 @@ class Gateway:
                         db.rollback()
                         return None, None, "idempotency_key_conflict", "409 Conflict"
                     if prior["state"] == "complete" and prior["response_json"]:
-                        cached = json.loads(prior["response_json"])
+                        stored = prior["response_json"]
+                        if stored.startswith("fernet:"):
+                            cached = json.loads(_result_fernet().decrypt(stored[7:].encode("ascii")).decode("utf-8"))
+                        else:
+                            cached = json.loads(stored)
                         status = prior["response_status"] or "200 OK"
                         db.rollback()
                         return None, (status, cached), None, None
@@ -275,16 +293,19 @@ class Gateway:
             db.close()
 
     def complete_experience(self, token_digest: str, request_key: str,
-                            status: str, payload: Dict[str, Any]) -> None:
+                            status: str, payload: Dict[str, Any],
+                            encrypt: bool = False) -> None:
         if not request_key:
             return
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        if encrypt:
+            encoded = "fernet:" + _result_fernet().encrypt(encoded.encode("utf-8")).decode("ascii")
         db = connect_db(self.db_path)
         try:
             db.execute(
                 "UPDATE experience_requests SET state='complete',response_status=?,response_json=? "
                 "WHERE token_hash=? AND request_key=?",
-                (status, json.dumps(payload, sort_keys=True, separators=(",", ":")),
-                 token_digest, request_key),
+                (status, encoded, token_digest, request_key),
             )
             db.commit()
         finally:
@@ -355,6 +376,7 @@ class Gateway:
     def run_tasks(self, environ, start_response):
         """Execute a bounded list of independent typed CLOCKED endpoint calls."""
         try:
+            _result_fernet()  # Fail closed before billing if result encryption is unavailable.
             length = int(environ.get("CONTENT_LENGTH") or "0")
             if length <= 0 or length > 1_048_576:
                 raise ValueError("task_body_size_out_of_range")
@@ -489,12 +511,12 @@ class Gateway:
                 "learning_state": "awaiting_nanlmind_ingest",
                 "quota_remaining": identity["remaining"],
             }
-            self.complete_experience(identity["token_hash"], request_key, "200 OK", payload)
+            self.complete_experience(identity["token_hash"], request_key, "200 OK", payload, encrypt=True)
             return json_response(start_response, "200 OK", payload)
         except Exception:
             payload = {"error": "clocked_task_execution_failed"}
             self.complete_experience(identity["token_hash"], request_key,
-                                      "502 Bad Gateway", payload)
+                                      "502 Bad Gateway", payload, encrypt=True)
             return json_response(start_response, "502 Bad Gateway", payload)
 
     def accept_observation(self, environ, start_response):
