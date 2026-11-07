@@ -425,10 +425,23 @@ class Gateway:
 
             def execute_with(active_client):
                 results = []
+                results_by_id = {}
                 for task in tasks:
                     endpoint = task["endpoint"]
                     source_text = task["text"]
                     options = dict(task.get("options", {}))
+                    claims_from = options.pop("claims_from", None)
+                    if claims_from is not None:
+                        prior = results_by_id.get(claims_from)
+                        if prior is None or not isinstance(prior.get("result"), dict):
+                            raise RuntimeError("task_dependency_result_missing")
+                        fields = prior["result"].get("fields", {})
+                        claims = fields.get("claims", []) if isinstance(fields, dict) else []
+                        if isinstance(claims, str):
+                            claims = [claims]
+                        if not isinstance(claims, list):
+                            raise RuntimeError("extracted_claims_invalid")
+                        options["claims"] = [str(value)[:2048] for value in claims[:64]]
                     if endpoint == "pipeline":
                         response = active_client.pipeline(
                             text=source_text, steps=build_pipeline(source_text),
@@ -446,7 +459,7 @@ class Gateway:
                         "steps": [{"endpoint": endpoint, "status": 200,
                                    "result": result_data}],
                     }, response)
-                    results.append({
+                    item = {
                         "task_id": task["id"], "endpoint": endpoint,
                         "source_id": task.get("source_id"),
                         "result_type": endpoint, "status": "ok",
@@ -460,7 +473,9 @@ class Gateway:
                             "cost_basis": event.get("cost_basis"),
                             "model_ms": event.get("timing"),
                         },
-                    })
+                    }
+                    results.append(item)
+                    results_by_id[task["id"]] = item
                 return results
 
             if client_context is None:
