@@ -747,7 +747,7 @@ class Gateway:
         try:
             db.execute("BEGIN IMMEDIATE")
             rows = db.execute(
-                "SELECT event_id,tenant_id,source_endpoint,base_generation,payload_json,received_at "
+                "SELECT event_id,tenant_id,source_endpoint,base_generation,payload_json,received_at,node_point "
                 "FROM endpoint_inbox WHERE status='pending' OR "
                 "(status='leased' AND lease_until<=?) ORDER BY received_at,event_id LIMIT 100",
                 (now,),
