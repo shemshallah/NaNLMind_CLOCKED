@@ -818,12 +818,22 @@ class Gateway:
                         if prior is None or not isinstance(prior.get("result"), dict):
                             raise RuntimeError("task_dependency_result_missing")
                         fields = prior["result"].get("fields", {})
-                        claims = fields.get("claims", []) if isinstance(fields, dict) else []
-                        if isinstance(claims, str):
-                            claims = [claims]
-                        if not isinstance(claims, list):
+                        raw_claims = fields.get("claims", []) if isinstance(fields, dict) else []
+                        if isinstance(raw_claims, dict):
+                            raw_claims = [raw_claims.get("value", raw_claims.get("text", ""))]
+                        elif isinstance(raw_claims, str):
+                            raw_claims = [raw_claims]
+                        if not isinstance(raw_claims, list):
                             raise RuntimeError("extracted_claims_invalid")
-                        options["claims"] = [str(value)[:2048] for value in claims[:64]]
+                        claims = []
+                        for value in raw_claims[:64]:
+                            if isinstance(value, dict):
+                                value = value.get("value", value.get("text", ""))
+                            if isinstance(value, str) and value.strip():
+                                claims.append(value[:2048])
+                        if not claims:
+                            claims = [str(prior.get("result", {}).get("value", ""))[:2048]]
+                        options["claims"] = claims
                     if endpoint == "pipeline":
                         response = active_client.pipeline(
                             text=source_text, steps=build_pipeline(source_text),
