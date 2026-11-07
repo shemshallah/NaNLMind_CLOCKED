@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
-from demo import fixture_classify, load_samples, run_demo
+from demo import fixture_classify, load_samples, live_classify, run_demo
 
 
 class ClockedDemoTests(unittest.TestCase):
@@ -77,6 +77,61 @@ class ClockedDemoTests(unittest.TestCase):
         self.assertTrue(all(row["learning_state"] == "heldout_never_sent_to_clocked"
                             for row in heldout))
         self.assertEqual(result["clocked_samples"], 48)
+
+
+
+class FakeHTTPResponse:
+    def __init__(self, body):
+        self.body = body
+    def __enter__(self):
+        return self
+    def __exit__(self, *args):
+        return False
+    def read(self, size=-1):
+        return self.body[:size]
+
+
+class LiveClockedResponseTests(unittest.TestCase):
+    def test_live_classify_requires_bounded_schema_valid_event(self):
+        event = {
+            "schema": "nanlm.clocked-experience",
+            "event_id": "a" * 64,
+            "task_labels": {"task_family": "technical_document"},
+        }
+        with patch("demo.urlopen", return_value=FakeHTTPResponse(
+            json.dumps({"event": event}).encode("utf-8")
+        )):
+            label, received = live_classify(
+                {"id": "sample-1", "text": "technical protocol"},
+                "https://gateway.example.test/v1/experience", "scoped-token"
+            )
+        self.assertEqual(label, "technical_document")
+        self.assertEqual(received["event_id"], "a" * 64)
+
+    def test_live_classify_rejects_oversized_response(self):
+        with patch("demo.urlopen", return_value=FakeHTTPResponse(b"x" * 1_048_577)):
+            with self.assertRaisesRegex(RuntimeError, "exceeds 1 MiB"):
+                live_classify(
+                    {"id": "sample-1", "text": "technical protocol"},
+                    "https://gateway.example.test/v1/experience", "scoped-token"
+                )
+
+    def test_live_classify_rejects_invalid_event_digest(self):
+        event = {
+            "schema": "nanlm.clocked-experience",
+            "event_id": "not-a-digest",
+            "task_labels": {"task_family": "technical_document"},
+        }
+        with patch("demo.urlopen", return_value=FakeHTTPResponse(
+            json.dumps({"event": event}).encode("utf-8")
+        )):
+            with self.assertRaisesRegex(RuntimeError, "event ID"):
+                live_classify(
+                    {"id": "sample-1", "text": "technical protocol"},
+                    "https://gateway.example.test/v1/experience", "scoped-token"
+                )
+
+
 
 
 if __name__ == "__main__":
