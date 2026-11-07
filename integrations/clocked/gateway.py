@@ -46,7 +46,18 @@ def _result_fernet():
 
 
 def connect_db(path: str) -> sqlite3.Connection:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, mode=0o700, exist_ok=True)
+        try:
+            os.chmod(parent, 0o700)
+        except OSError:
+            pass
     db = sqlite3.connect(path, timeout=10)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
     db.row_factory = sqlite3.Row
     db.execute("""
         CREATE TABLE IF NOT EXISTS demo_tokens (
