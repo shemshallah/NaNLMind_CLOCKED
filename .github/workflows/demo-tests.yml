@@ -11,10 +11,21 @@ permissions:
 jobs:
   demo-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Run offline demo tests
+      - name: Checkout canonical NaNLMind native learner
+        uses: actions/checkout@v4
+        with:
+          repository: shemshallah/NaNLMind
+          path: nanlmind
+      - name: Build native NaNLMind CLOCKED learner
+        run: |
+          make -C nanlmind -j2 clocked-head-demo
+          mkdir -p build
+          cp nanlmind/build/clocked-demo build/clocked-demo
+      - name: Run offline demo tests against the real native learner
         run: python -m unittest discover -s tests -p 'test_demo.py' -v
