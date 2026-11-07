@@ -587,7 +587,9 @@ class Gateway:
             return json_response(start_response, status, {"error": error})
         return identity
 
-    def reserve_experience(self, token: str, request_key: str, body_sha256: str):
+    def reserve_experience(self, token: str, request_key: str, body_sha256: str,
+                           allowed_endpoints: set | None = None):
+        allowed_endpoints = allowed_endpoints or {"clocked_demo"}
         pepper = os.environ.get("CLOCKED_TOKEN_PEPPER", "")
         if not pepper:
             return None, None, "gateway_misconfigured", "503 Service Unavailable"
@@ -602,7 +604,7 @@ class Gateway:
             if row is None or row["revoked"] or row["expires_at"] <= now:
                 db.rollback()
                 return None, None, "unauthorized", "401 Unauthorized"
-            if row["endpoint_id"] != "clocked_demo":
+            if row["endpoint_id"] not in allowed_endpoints:
                 db.rollback()
                 return None, None, "endpoint_scope_mismatch", "403 Forbidden"
             if request_key:
@@ -788,7 +790,8 @@ class Gateway:
             data, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         ).encode("utf-8")).hexdigest()
         identity, cached, error, error_status = self.reserve_experience(
-            token, request_key, body_sha256
+            token, request_key, body_sha256,
+            allowed_endpoints={"clocked_demo", "hermes_demo"},
         )
         if error:
             return json_response(start_response, error_status, {"error": error})
