@@ -37,6 +37,21 @@ Issue short-lived scoped participant tokens through the admin interface. A parti
 
 The service enforces request limits, byte limits, idempotency and endpoint scope. Reuse the same idempotency key for retries of the same logical request. A key reused with a different body must fail with conflict.
 
+## Standalone chat CLI
+
+`chat_cli.py` is the independent participant console. It keeps a hash-chained
+scratch, accepts multiline `/paste` sections, turns them into named `/source`
+buffers, and reuses `/copy`/`@buffer` references across chat turns and API
+calls. It exposes `/health`, `/experience`, `/tasks`, `/endpoint` (all ten
+endpoints), `/observations`, `/poll`, `/ack`, `/token`, and the reviewed
+`/plan` → `/approve` → `/run` flow. The chat provider is any OpenAI-compatible
+endpoint; the CLOCKED upstream key remains server-side.
+
+```sh
+python integrations/clocked/chat_cli.py \
+  --model-url http://127.0.0.1:11434/v1 --model gemma4:31b-cloud
+```
+
 ## HERMES integration
 
 HERMES should call the service through the versioned typed task-plan/execute contract described in [the autonomous cognition design](../../docs/HERMES_AUTONOMOUS_CLOCKED_HEAD_CORTEX.md). HERMES does not import the CLOCKED SDK or hold the upstream API key.
