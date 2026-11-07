@@ -37,6 +37,17 @@ Issue short-lived scoped participant tokens through the admin interface. A parti
 
 The service enforces request limits, byte limits, idempotency and endpoint scope. Reuse the same idempotency key for retries of the same logical request. A key reused with a different body must fail with conflict.
 
+Token scopes:
+
+| issued endpoint | token type | use |
+|---|---|---|
+| `clocked_demo` | `CLOCKED_USER_API` | standalone CLI, experience and task plans |
+| `hermes_demo` | `HERMES_DEMO_API` | HERMES task plans and observations |
+| `my_android` | `NANLM_DEVICE_TOKEN` | Android observation intake |
+
+`CLOCKED_API_KEY` is the upstream server secret and must never be used as a
+participant token.
+
 ## Standalone chat CLI
 
 `chat_cli.py` is the independent participant console. It keeps a hash-chained
