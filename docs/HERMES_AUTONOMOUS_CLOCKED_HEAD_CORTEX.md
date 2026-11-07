@@ -1,6 +1,6 @@
 # HERMES Autonomous CLOCKED Cognition and NaN Head Cortex
 
-**Status:** design specification; runtime implementation remains to be built  
+**Status:** architecture plus partial runtime implementation; production deployment and canonical promotion remain outstanding  
 **Service owner:** `shemshallah/NaNLMind_CLOCKED`  
 **Conversational coordinator:** `shemshallah/NaNLMind_HERMES`  
 **Canonical mathematical substrate:** `shemshallah/NaNLMind`  
@@ -600,3 +600,63 @@ The exact route path is illustrative. It must be reconciled with existing NANNET
 - No automatic promotion from unverified API output.
 - No blending endpoint scores into an uncalibrated confidence number.
 - No claim that a successful API response means the NaNLMind learner improved.
+
+
+## 13. Implementation checkpoint — 2026-11-06
+
+The initial cross-repository implementation now exists. This checkpoint
+supersedes the earlier statement that all runtime work remains to be built.
+
+### Implemented
+
+- `NaNLMind_CLOCKED` owns the upstream SDK adapter, participant gateway,
+  bounded multi-endpoint task execution, idempotent result cache and service
+  tests. Multi-endpoint cached results are encrypted at rest; the gateway
+  fails closed if its result-encryption key is unavailable.
+- `NaNLMind_HERMES` has a dedicated mode-selection call. Its configured LLM
+  proposes a mode from the request and source descriptors; HERMES maps the
+  mode to fixed endpoint policies and falls back deterministically if the
+  proposal is invalid. Raw source bodies are not sent in the mode-selection
+  prompt. Source transmission still requires explicit approval.
+- HERMES stores source observations, extracted claims, explicit compare
+  conflicts, synthesis drafts, head responses and learning proposals in a
+  hash-chained, revisioned scratch journal.
+- HERMES performs a two-pass synthesis: draft from source evidence, submit the
+  draft to the NaNLMind head-cortex receiver, then compose the final response
+  while preserving UNKNOWN and CONFLICT.
+- NaNLMind's receiving service converts CLOCKED endpoint observations and
+  conflict-map entries into typed relation atoms for its existing Boolean
+  heads. The service remains the NaNLMind-side interface; it does not import
+  the upstream CLOCKED SDK.
+- NaNLMind can clone a canonical topology into an isolated candidate and run
+  native `relation-train` on CLOCKED weak-supervision records. The manifest
+  records the teacher and dataset digest and explicitly marks CLOCKED outputs
+  as not ground truth. Sensitive PII values are excluded from generated
+  training records.
+- Candidate evaluation compares the candidate and canonical baseline on the
+  same caller-declared test set, verifies its digest and base/candidate
+  topology digests, and rejects relation fingerprints that overlap the
+  training set. It reports accuracy, coverage, balanced accuracy, confusion
+  counts and per-resolution metrics. It cannot promote.
+- Native CI includes an end-to-end test that trains an isolated candidate
+  with the real `relation-train` binary, evaluates it, and verifies that the
+  canonical topology digest is unchanged.
+
+### Still outstanding
+
+- Production deployment and live upstream CLOCKED API verification with
+  authorized service credentials and quota configuration.
+- End-to-end production NANNET/NaNROUTER HW3:0 routing and Koyeb deployment.
+- Full M0–M9 transformation execution over every endpoint result; the current
+  head-cortex path maps typed endpoint observations into the native relation
+  learner but does not yet prove every transformation layer is active.
+- Automated multi-mask search/selection and richer negative-control suites.
+- Candidate retrieval/review UI and six-runner generation-barrier promotion.
+  No candidate is canonical until that separate gate is implemented and
+  passed.
+
+The existing six-runner ring remains NaNLMind infrastructure. HERMES does not
+copy or run a second version of the native runner implementation; it submits
+typed packages through the authenticated head-cortex interface. CLOCKED
+service code remains in this repository, while NaNLMind retains only its
+receiving-language contract and native learning side.
