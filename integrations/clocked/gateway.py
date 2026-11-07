@@ -846,6 +846,7 @@ class Gateway:
                             options.pop("text", None)
                         elif endpoint == "grounding":
                             options.setdefault("documents", [source_text])
+                            options.setdefault("answer", source_text)
                             options.setdefault("claims", [source_text])
                             options.pop("text", None)
                         elif endpoint == "compare":
