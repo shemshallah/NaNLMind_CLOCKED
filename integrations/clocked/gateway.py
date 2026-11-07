@@ -20,6 +20,8 @@ from wsgiref.simple_server import make_server
 from clocked_experience import build_pipeline, make_event
 
 MAX_BODY = 64 * 1024
+MAX_TASK_RESULT_BYTES = 262_144
+MAX_TASK_RESPONSE_BYTES = 4 * 1024 * 1024
 SCHEMA_VERSION = 1
 SOURCE_ENDPOINT = "clocked_demo"
 ENDPOINTS = {"my_android", "hermes_demo", "clocked_demo"}
@@ -491,6 +493,8 @@ class Gateway:
                         result_data = dict(response)
                     except (TypeError, ValueError):
                         result_data = {"result": str(response)[:4096]}
+                    if len(json.dumps(result_data, ensure_ascii=False).encode("utf-8")) > MAX_TASK_RESULT_BYTES:
+                        raise RuntimeError("clocked_result_exceeds_size_limit")
                     event = make_event(source_text, {
                         "steps": [{"endpoint": endpoint, "status": 200,
                                    "result": result_data}],
@@ -525,6 +529,8 @@ class Gateway:
                 "learning_state": "awaiting_nanlmind_ingest",
                 "quota_remaining": identity["remaining"],
             }
+            if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > MAX_TASK_RESPONSE_BYTES:
+                raise RuntimeError("clocked_task_response_exceeds_size_limit")
             self.complete_experience(identity["token_hash"], request_key, "200 OK", payload, encrypt=True)
             return json_response(start_response, "200 OK", payload)
         except Exception:
