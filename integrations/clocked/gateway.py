@@ -416,6 +416,9 @@ class Gateway:
                 seen.add(task_id)
             if total_bytes > 1_048_576:
                 raise ValueError("task_input_limit_exceeded")
+        except RuntimeError:
+            return json_response(start_response, "503 Service Unavailable",
+                                  {"error": "result_cache_encryption_unavailable"})
         except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             return json_response(start_response, "400 Bad Request", {"error": str(exc)[:96]})
 
