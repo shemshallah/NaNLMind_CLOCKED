@@ -26,6 +26,14 @@ class FakeClocked:
             "timing": {"total_ms": 12},
         }
 
+    def extract(self, text, **options):
+        self.calls += 1
+        return {"fields": {"claims": [text]}, "timing": {"model_ms": 3}}
+
+    def grounding(self, text, **options):
+        self.calls += 1
+        return {"verdict": "unknown", "timing": {"model_ms": 2}}
+
 
 def invoke(app, path, method="GET", payload=None, bearer=None, headers=None):
     raw = b"" if payload is None else json.dumps(payload).encode("utf-8")
@@ -137,6 +145,43 @@ class GatewayTests(unittest.TestCase):
         status, result = invoke(self.app, "/v1/experience", "POST", {"text": "two"}, token)
         self.assertEqual(status, "429 Too Many Requests")
         self.assertEqual(result["error"], "quota_exceeded")
+
+    def test_multi_endpoint_task_plan_returns_typed_source_results(self):
+        token = self.issue(max_requests=2)
+        plan = {
+            "schema": "nanlm.clocked-task-plan/1", "version": 1,
+            "plan_id": "task-plan-0001",
+            "tasks": [
+                {"id": "extract-a", "endpoint": "extract", "text": "source A", "depends_on": []},
+                {"id": "ground-a", "endpoint": "grounding", "text": "source A", "depends_on": ["extract-a"]},
+            ],
+        }
+        status, result = invoke(self.app, "/v1/tasks", "POST",
+            {"protocol": "nanlm.clocked-task-plan", "version": 1, "plan": plan},
+            token, {"Idempotency-Key": "task-plan-0001"})
+        self.assertEqual(status, "200 OK")
+        self.assertEqual(result["protocol"], "nanlm.clocked-task-results")
+        self.assertEqual([item["endpoint"] for item in result["results"]], ["extract", "grounding"])
+        self.assertEqual([item["result_type"] for item in result["results"]], ["extract", "grounding"])
+        self.assertEqual(result["results"][0]["result"]["fields"]["claims"], ["source A"])
+        self.assertEqual(result["learning_state"], "awaiting_nanlmind_ingest")
+
+    def test_multi_endpoint_plan_rejects_forward_dependency_and_unknown_endpoint(self):
+        token = self.issue()
+        plan = {"schema": "nanlm.clocked-task-plan/1", "version": 1,
+                "plan_id": "task-plan-0002",
+                "tasks": [{"id": "a", "endpoint": "extract", "text": "x",
+                           "depends_on": ["b"]}]}
+        status, result = invoke(self.app, "/v1/tasks", "POST",
+            {"protocol": "nanlm.clocked-task-plan", "version": 1, "plan": plan}, token)
+        self.assertEqual(status, "400 Bad Request")
+        self.assertEqual(result["error"], "dependencies_must_reference_prior_tasks")
+        plan["tasks"][0]["depends_on"] = []
+        plan["tasks"][0]["endpoint"] = "arbitrary_method"
+        status, result = invoke(self.app, "/v1/tasks", "POST",
+            {"protocol": "nanlm.clocked-task-plan", "version": 1, "plan": plan}, token)
+        self.assertEqual(status, "400 Bad Request")
+        self.assertEqual(result["error"], "unsupported_endpoint")
 
     def test_unknown_token_is_rejected(self):
         status, result = invoke(self.app, "/v1/experience", "POST", {"text": "hello"}, "not-a-token")
