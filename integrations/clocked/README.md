@@ -69,3 +69,24 @@ scoped `CLOCKED_USER_API`. The harness never sends held-out examples to
 CLOCKED. Only labels matching an independent gold label enter the native demo.
 The C++ learner remains in NaNLMind because it directly exercises NaNLMind's
 native routing/head implementation; this repository owns the service harness.
+
+## Multi-endpoint task-plan API
+
+HERMES uses the scoped participant endpoint `POST /v1/tasks` for a bounded
+version-1 task plan. The request carries an idempotency key and the participant
+token; the privileged `CLOCKED_API_KEY` remains exclusively server-side.
+
+The plan schema is
+[`task-plan.schema.json`](task-plan.schema.json). It allows at most 16
+ordered tasks, each using one of the SDK endpoint methods:
+`decide`, `extract`, `fill`, `pii`, `injection`, `script`,
+`grounding`, `compare`, `rerank`, or `pipeline`. Dependencies must refer
+to earlier task IDs. The gateway validates endpoint names, body size,
+dependency order, participant scope, quota and idempotency before calling the
+SDK. Each result retains its endpoint-specific result type and content
+provenance; it is returned to the authenticated HERMES caller and is not
+committed to NaNLMind training state.
+
+`/v1/experience` remains the legacy one-input pipeline endpoint. HERMES
+multi-source plans use separate endpoint calls through `/v1/tasks`; they do
+not model CLOCKED Pipeline as a parallel DAG.
