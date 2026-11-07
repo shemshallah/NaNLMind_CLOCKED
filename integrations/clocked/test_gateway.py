@@ -94,9 +94,10 @@ class FakeNannet:
             payload = json.loads(request.data.decode("utf-8"))
             with self.lock:
                 self.registration_payloads.append(payload)
+                now = int(time.time())
                 used = {
-                    value["node_point"] for value in self.leases.values()
-                    if value["lease_expires_at"] > int(time.time())
+                    value["node_point"] for token, value in self.leases.items()
+                    if value["lease_expires_at"] > now or token in self.pending_tokens
                 }
                 point = self.force_node_point
                 if point is None:
@@ -470,6 +471,42 @@ class GatewayTests(unittest.TestCase):
         db.close()
         replacement = self.issue_demo_instance()
         self.assertEqual(replacement["node_point"], 9)
+
+
+    def test_expired_nannet_lease_with_pending_work_keeps_its_point_until_release(self):
+        first = self.issue_demo_instance("pending-expired")
+        self.nannet.leases[first["nannet_token"]]["lease_expires_at"] = 0
+        self.nannet.pending_tokens.add(first["nannet_token"])
+        db = connect_db(self.db_path)
+        db.execute("UPDATE demo_instances SET expires_at=0 WHERE instance_id=?",
+                   (first["instance_id"],))
+        db.commit()
+        db.close()
+
+        second = self.issue_demo_instance("next-instance")
+        self.assertEqual(first["node_point"], 9)
+        self.assertEqual(second["node_point"], 10)
+
+        status, blocked = invoke(
+            self.app, "/admin/instances/revoke", "POST",
+            {"instance_id": first["instance_id"]}, "admin-test-token",
+        )
+        self.assertEqual(status, "409 Conflict")
+        self.assertTrue(blocked["clocked_token_revoked"])
+        status, inventory = invoke(self.app, "/admin/instances", bearer="admin-test-token")
+        self.assertEqual(status, "200 OK")
+        expired = [x for x in inventory["instances"] if x["instance_id"] == first["instance_id"]]
+        self.assertEqual(len(expired), 1)
+        self.assertEqual(expired[0]["registration_state"], "nannet_lease_expired_pending_reconcile")
+
+        self.nannet.pending_tokens.remove(first["nannet_token"])
+        status, released = invoke(
+            self.app, "/admin/instances/revoke", "POST",
+            {"instance_id": first["instance_id"]}, "admin-test-token",
+        )
+        self.assertEqual(status, "200 OK")
+        third = self.issue_demo_instance("reused-after-release")
+        self.assertEqual(third["node_point"], 9)
 
     def test_demo_instance_allocator_enforces_247_point_capacity(self):
         now = int(time.time())
