@@ -837,8 +837,18 @@ class Gateway:
                         # endpoint instead of sending an invalid keyword.
                         if endpoint == "decide":
                             options.setdefault("state", source_text)
+                            options.setdefault("questions", {
+                                "answer": {
+                                    "type": "noul",
+                                    "instructions": "Does the source support a useful answer?",
+                                }
+                            })
                             options.pop("text", None)
-                        elif endpoint in ("grounding", "compare"):
+                        elif endpoint == "grounding":
+                            options.setdefault("documents", [source_text])
+                            options.setdefault("claims", [source_text])
+                            options.pop("text", None)
+                        elif endpoint == "compare":
                             options.setdefault("documents", [source_text])
                             options.pop("text", None)
                         elif endpoint == "rerank":
@@ -897,7 +907,9 @@ class Gateway:
                 raise RuntimeError("clocked_task_response_exceeds_size_limit")
             self.complete_experience(identity["token_hash"], request_key, "200 OK", payload, encrypt=True)
             return json_response(start_response, "200 OK", payload)
-        except Exception:
+        except Exception as exc:
+            print("clocked task execution failed: " + type(exc).__name__ +
+                  " " + str(exc)[:240], flush=True)
             payload = {"error": "clocked_task_execution_failed"}
             self.complete_experience(identity["token_hash"], request_key,
                                       "502 Bad Gateway", payload, encrypt=True)
