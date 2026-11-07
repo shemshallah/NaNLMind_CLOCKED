@@ -479,7 +479,7 @@ class GatewayTests(unittest.TestCase):
                 "lease_expires_at": now + 600,
             }
         status, result = invoke(
-            self.app, "/auth/demo-token", "POST", {"instance_label": "overflow"},
+            self.app, "/auth/demo-token", "POST", {"instance_label": "overflow", "consent": True},
             "enroll-test-token",
         )
         self.assertEqual(status, "503 Service Unavailable")
@@ -506,7 +506,7 @@ class GatewayTests(unittest.TestCase):
         def issue(index):
             status, result = invoke(
                 self.app, "/auth/demo-token", "POST",
-                {"instance_label": "parallel-%d" % index, "ttl_seconds": 600},
+                {"instance_label": "parallel-%d" % index, "ttl_seconds": 600, "consent": True},
                 "enroll-test-token",
             )
             self.assertEqual(status, "201 Created", result)
@@ -584,7 +584,7 @@ class GatewayTests(unittest.TestCase):
         self.nannet.force_node_point = 8
         status, result = invoke(
             self.app, "/auth/demo-token", "POST",
-            {"instance_label": "bad-point"}, "enroll-test-token",
+            {"instance_label": "bad-point", "consent": True}, "enroll-test-token",
         )
         self.assertEqual(status, "502 Bad Gateway")
         self.assertEqual(result["error"], "nannet_returned_invalid_node_lease")
