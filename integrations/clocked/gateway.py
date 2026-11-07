@@ -264,8 +264,10 @@ class Gateway:
         try:
             _result_fernet()
             data = self.read_body(environ)
-            if set(data) - {"instance_label", "max_requests", "ttl_seconds"}:
+            if set(data) - {"instance_label", "max_requests", "ttl_seconds", "consent"}:
                 raise ValueError("unknown_fields")
+            if data.get("consent") is not True:
+                raise ValueError("explicit_nannet_registration_consent_required")
             label = data.get("instance_label", "demo-instance")
             if not isinstance(label, str) or not label.strip() or len(label) > 64:
                 raise ValueError("invalid_instance_label")
