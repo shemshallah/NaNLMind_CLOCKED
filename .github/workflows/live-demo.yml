@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 30
     env:
       CLOCKED_API_KEY: ${{ secrets.CLOCKED_API_KEY }}
-      CLOCKED_GATEWAY_URL: ${{ secrets.CLOCKED_GATEWAY_URL }}
+      CLOCKED_GATEWAY_URL: ${{ vars.NANNET_URL || vars.BSR0_PORTAL_API }}
       CLOCKED_DEMO_ENROLLMENT_TOKEN: ${{ secrets.CLOCKED_DEMO_ENROLLMENT_TOKEN }}
     steps:
       - name: Checkout CLOCKED integration
