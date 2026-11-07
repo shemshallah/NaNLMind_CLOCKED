@@ -1,0 +1,105 @@
+name: CLOCKED live demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_live_calls:
+        description: "Run one credential smoke test plus the 48-sample live demo against the configured CLOCKED gateway"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  live-demo:
+    if: inputs.confirm_live_calls
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOCKED_API_KEY: ${{ secrets.CLOCKED_API_KEY }}
+      CLOCKED_GATEWAY_URL: ${{ secrets.CLOCKED_GATEWAY_URL }}
+      CLOCKED_DEMO_ENROLLMENT_TOKEN: ${{ secrets.CLOCKED_DEMO_ENROLLMENT_TOKEN }}
+    steps:
+      - name: Checkout CLOCKED integration
+        uses: actions/checkout@v4
+      - name: Checkout canonical NaNLMind native learner
+        uses: actions/checkout@v4
+        with:
+          repository: shemshallah/NaNLMind
+          path: nanlmind
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CLOCKED and demo dependencies
+        run: python -m pip install -r integrations/clocked/requirements.txt
+      - name: Validate live credentials without printing them
+        run: |
+          test -n "$CLOCKED_API_KEY"
+          test -n "$CLOCKED_GATEWAY_URL"
+          test -n "$CLOCKED_DEMO_ENROLLMENT_TOKEN"
+          case "$CLOCKED_GATEWAY_URL" in https://*) ;; *) echo "CLOCKED_GATEWAY_URL must use HTTPS"; exit 1 ;; esac
+      - name: Smoke-test the Actions-side upstream API credential
+        working-directory: integrations/clocked
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          from clocked_sdk import Clocked
+          from clocked_experience import build_pipeline
+          text = "A small demo request to verify the CLOCKED API connection."
+          with Clocked() as client:
+              response = client.pipeline(text=text, steps=build_pipeline(text), on_error="continue")
+          if response is None:
+              raise SystemExit("CLOCKED returned no response")
+          print("upstream_credential_smoke_test=passed")
+          PY
+      - name: Build the native NaNLMind demo
+        run: make -C nanlmind -j2 clocked-head-demo
+      - name: Mint one scoped demo-instance token from Koyeb auth
+        run: |
+          python - <<'PY'
+          import json, os
+          from urllib.request import Request, urlopen
+          base = os.environ["CLOCKED_GATEWAY_URL"].rstrip("/")
+          body = json.dumps({
+              "instance_label": "github-actions-live-demo",
+              "max_requests": 100,
+              "ttl_seconds": 21600,
+          }).encode()
+          request = Request(
+              base + "/auth/demo-token",
+              data=body,
+              headers={
+                  "Authorization": "Bearer " + os.environ["CLOCKED_DEMO_ENROLLMENT_TOKEN"],
+                  "Content-Type": "application/json",
+                  "Accept": "application/json",
+              },
+              method="POST",
+          )
+          with urlopen(request, timeout=20) as response:
+              result = json.loads(response.read().decode())
+          token = result.get("token")
+          if not isinstance(token, str) or not token.startswith("clu_"):
+              raise SystemExit("Koyeb auth service did not return a scoped demo token")
+          print("::add-mask::" + token)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write("CLOCKED_USER_API=" + token + "\n")
+              env.write("CLOCKED_NODE_POINT=" + str(result["node_point"]) + "\n")
+              env.write("CLOCKED_INTAKE_URL=" + base + "/v1/experience\n")
+          print("allocated_node_point=" + str(result["node_point"]))
+          PY
+      - name: Run live CLOCKED-to-NaNLMind demo
+        run: |
+          python integrations/clocked/demo.py \
+            --native-binary nanlmind/build/clocked-demo \
+            --output-dir build/clocked-live-demo
+      - name: Upload minimized demo evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: clocked-live-demo-evidence
+          path: build/clocked-live-demo/clocked-events.jsonl
+          if-no-files-found: error
+          retention-days: 7
