@@ -86,6 +86,8 @@ class GatewayTests(unittest.TestCase):
             "CLOCKED_TOKEN_PEPPER": "test-only-pepper",
             "CLOCKED_GATEWAY_ADMIN_TOKEN": "admin-test-token",
             "NANLM_RUNNER_INGEST_TOKEN": "runner-test-token",
+            "CLOCKED_DEMO_ENROLLMENT_TOKEN": "enroll-test-token",
+            "CLOCKED_API_KEY": "test-upstream-key",
         })
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -310,6 +312,110 @@ class GatewayTests(unittest.TestCase):
         status, result = invoke(self.app, "/internal/observations", bearer="admin-test-token")
         self.assertEqual(status, "401 Unauthorized")
         self.assertEqual(result["error"], "runner_unauthorized")
+
+
+    def issue_demo_instance(self, label="instance"):
+        status, result = invoke(
+            self.app, "/auth/demo-token", "POST",
+            {"instance_label": label, "max_requests": 20, "ttl_seconds": 600},
+            "enroll-test-token",
+        )
+        self.assertEqual(status, "201 Created", result)
+        self.assertEqual(result["registration_state"], "reserved_pending_nannet_registration")
+        return result
+
+    def test_demo_auth_mints_scoped_tokens_and_allocates_lowest_free_points(self):
+        denied, _ = invoke(self.app, "/auth/demo-token", "POST", {"instance_label": "x"},
+                           "wrong-enrollment-token")
+        self.assertEqual(denied, "401 Unauthorized")
+        first = self.issue_demo_instance("first")
+        second = self.issue_demo_instance("second")
+        self.assertEqual(first["node_point"], 9)
+        self.assertEqual(second["node_point"], 10)
+        self.assertNotEqual(first["token"], second["token"])
+        db = connect_db(self.db_path)
+        rows = db.execute("SELECT token_hash,node_point FROM demo_tokens ORDER BY node_point").fetchall()
+        db.close()
+        self.assertTrue(all(row["token_hash"] != first["token"] for row in rows))
+
+    def test_demo_instance_identity_flows_into_clocked_event_and_observation(self):
+        instance = self.issue_demo_instance()
+        status, result = invoke(
+            self.app, "/v1/experience", "POST",
+            {"protocol": "nanlm.clocked-experience", "text": "instance-bound demo"},
+            instance["token"], {"Idempotency-Key": "point-bound-demo"},
+        )
+        self.assertEqual(status, "200 OK")
+        self.assertEqual(result["event"]["node_point"], 9)
+        self.assertEqual(result["event"]["instance_id"], instance["instance_id"])
+
+        payload = {
+            "protocol": "nanlm.endpoint-observation", "version": 1,
+            "event_id": "f" * 64, "base_generation": 0,
+            "active_heads": [2, 4], "outcome_verified": False,
+        }
+        status, accepted = invoke(self.app, "/v1/observations", "POST", payload, instance["token"])
+        self.assertEqual(status, "202 Accepted")
+        self.assertEqual(accepted["node_point"], 9)
+        status, queued = invoke(self.app, "/internal/observations", bearer="runner-test-token")
+        self.assertEqual(status, "200 OK")
+        self.assertEqual(queued["events"][0]["node_point"], 9)
+
+    def test_revocation_releases_lowest_point_for_reuse(self):
+        first = self.issue_demo_instance()
+        second = self.issue_demo_instance()
+        status, result = invoke(
+            self.app, "/admin/instances/revoke", "POST",
+            {"instance_id": first["instance_id"]}, "admin-test-token",
+        )
+        self.assertEqual(status, "200 OK")
+        self.assertTrue(result["revoked"])
+        third = self.issue_demo_instance()
+        self.assertEqual(second["node_point"], 10)
+        self.assertEqual(third["node_point"], 9)
+
+    def test_expired_instance_releases_point(self):
+        first = self.issue_demo_instance()
+        db = connect_db(self.db_path)
+        db.execute("UPDATE demo_instances SET expires_at=0 WHERE instance_id=?",
+                   (first["instance_id"],))
+        db.commit()
+        db.close()
+        replacement = self.issue_demo_instance()
+        self.assertEqual(replacement["node_point"], 9)
+
+    def test_demo_instance_allocator_enforces_247_point_capacity(self):
+        db = connect_db(self.db_path)
+        now = int(time.time())
+        for point in range(9, 256):
+            db.execute(
+                "INSERT INTO demo_instances(node_point,instance_id,token_hash,expires_at,created_at) "
+                "VALUES(?,?,?,?,?)",
+                (point, "occupied-%d" % point, "hash-%d" % point, now + 600, now),
+            )
+        db.commit()
+        db.close()
+        status, result = invoke(
+            self.app, "/auth/demo-token", "POST", {"instance_label": "overflow"},
+            "enroll-test-token",
+        )
+        self.assertEqual(status, "429 Too Many Requests")
+        self.assertEqual(result["available_range"], "9..255")
+
+    def test_demo_token_request_rejects_caller_selected_point_and_oversized_policy(self):
+        status, result = invoke(
+            self.app, "/auth/demo-token", "POST",
+            {"instance_label": "bad", "node_point": 200}, "enroll-test-token",
+        )
+        self.assertEqual(status, "400 Bad Request")
+        self.assertEqual(result["error"], "unknown_fields")
+        status, result = invoke(
+            self.app, "/auth/demo-token", "POST",
+            {"instance_label": "bad", "ttl_seconds": 86400}, "enroll-test-token",
+        )
+        self.assertEqual(status, "400 Bad Request")
+        self.assertEqual(result["error"], "ttl_seconds_out_of_range")
+
 
 if __name__ == "__main__":
     unittest.main()
