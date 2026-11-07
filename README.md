@@ -61,7 +61,7 @@ Never commit CLOCKED API keys, gateway admin tokens, participant tokens, private
 The root Dockerfile deploys the CLOCKED gateway as a persistent Koyeb web
 service. The upstream `CLOCKED_API_KEY` remains in the CLOCKED adapter's Koyeb secrets and is never returned to participants. Demo clients obtain a scoped CLOCKED token from `POST /auth/demo-token`; the adapter registers the instance with the existing Koyeb NANNET authority and returns a separate scoped NANNET endpoint token.
 
-The CLOCKED adapter delegates registration and lowest-free allocation to the existing Koyeb NANNET authority. NANNET allocates HW8–HW254, mapping to node points `9..255`, and returns a scoped `nnt_` endpoint token and active lease. CLOCKED binds that identity to a separate request-limited `clu_` token; the upstream API key never leaves the server. Revocation disables CLOCKED access and asks NANNET to release the lease. See [Koyeb deployment and secret setup](deploy/koyeb/README.md).
+The CLOCKED adapter delegates registration and lowest-free allocation to the existing Koyeb NANNET authority. Demo enrollment requires explicit participant consent before any NANNET device registration is created. NANNET allocates HW8–HW254, mapping to node points `9..255`, and returns a scoped `nnt_` endpoint token and active lease. CLOCKED binds that identity to a separate request-limited `clu_` token; the upstream API key never leaves the server. Revocation disables CLOCKED access and asks NANNET to release the lease. See [Koyeb deployment and secret setup](deploy/koyeb/README.md).
 
 ## Manually gated live demo workflow
 
