@@ -75,7 +75,7 @@ def live_classify(sample: dict, endpoint: str, token: str) -> tuple[str, dict]:
         "text": sample["text"],
     }, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     request_id = hashlib.sha256(
-        (sample["id"] + "\0" + hashlib.sha256(payload).hexdigest()).encode()
+        (sample["id"] + "\\0" + hashlib.sha256(payload).hexdigest()).encode()
     ).hexdigest()
     request = Request(endpoint, data=payload, headers={
         "Authorization": "Bearer " + token,
@@ -84,10 +84,22 @@ def live_classify(sample: dict, endpoint: str, token: str) -> tuple[str, dict]:
         "Idempotency-Key": request_id,
     }, method="POST")
     with urlopen(request, timeout=90) as response:
-        result = json.loads(response.read(1_048_577).decode("utf-8"))
+        raw = response.read(1_048_577)
+    if len(raw) > 1_048_576:
+        raise RuntimeError("CLOCKED gateway response exceeds 1 MiB")
+    try:
+        result = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("CLOCKED gateway returned invalid JSON") from exc
+    if not isinstance(result, dict):
+        raise RuntimeError("CLOCKED gateway response must be a JSON object")
     event = result.get("event")
     if not isinstance(event, dict) or event.get("schema") != "nanlm.clocked-experience":
         raise RuntimeError("gateway returned an invalid Clocked event")
+    event_id = event.get("event_id")
+    if (not isinstance(event_id, str) or len(event_id) != 64
+            or any(ch not in "0123456789abcdef" for ch in event_id)):
+        raise RuntimeError("gateway returned an invalid Clocked event ID")
     labels = event.get("task_labels")
     label = labels.get("task_family") if isinstance(labels, dict) else None
     if label not in LABELS:
