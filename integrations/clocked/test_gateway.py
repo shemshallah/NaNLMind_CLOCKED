@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import time
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +13,7 @@ except ImportError:  # optional on minimal hosts; CI installs service requiremen
     Fernet = None
 
 from clocked_experience import digest, make_event, summarize_step
+import gateway
 from gateway import Gateway, connect_db
 
 
@@ -56,6 +58,81 @@ def invoke(app, path, method="GET", payload=None, bearer=None, headers=None):
     return captured["status"], json.loads(body.decode("utf-8"))
 
 
+
+
+class FakeNannetResponse:
+    def __init__(self, status, payload):
+        self.status = status
+        self.payload = json.dumps(payload).encode("utf-8")
+
+    def read(self, limit=-1):
+        return self.payload if limit < 0 else self.payload[:limit]
+
+    def getcode(self):
+        return self.status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+class FakeNannet:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.leases = {}
+        self.counter = 0
+        self.pending_tokens = set()
+        self.registration_payloads = []
+        self.force_node_point = None
+
+    def urlopen(self, request, timeout=20):
+        path = request.full_url.split("nannet.test", 1)[-1]
+        authorization = request.get_header("Authorization") or ""
+        if path == "/v1/devices/register":
+            payload = json.loads(request.data.decode("utf-8"))
+            with self.lock:
+                self.registration_payloads.append(payload)
+                used = {
+                    value["node_point"] for value in self.leases.values()
+                    if value["lease_expires_at"] > int(time.time())
+                }
+                point = self.force_node_point
+                if point is None:
+                    point = next((p for p in range(9, 256) if p not in used), None)
+                if point is None or point in used:
+                    return FakeNannetResponse(503, {"error": "no_device_slots_available"})
+                self.counter += 1
+                token = "nnt_fake_token_%d" % self.counter
+                lease_id = "fake-lease-%d" % self.counter
+                lease_expires_at = int(time.time()) + 3600
+                self.leases[token] = {
+                    "node_point": point,
+                    "lease_id": lease_id,
+                    "lease_expires_at": lease_expires_at,
+                }
+                return FakeNannetResponse(201, {
+                    "device_id": "fake-device-%d" % self.counter,
+                    "address": "nan://GM0:SC0:MC0:BS0:HW%d" % (point - 1),
+                    "node_point": point,
+                    "lease_id": lease_id,
+                    "lease_expires_at": lease_expires_at,
+                    "token": token,
+                    "scopes": ["intake", "observation", "heartbeat", "n16t"],
+                })
+        if path == "/v1/devices/release":
+            token = authorization.removeprefix("Bearer ")
+            with self.lock:
+                if token not in self.leases:
+                    return FakeNannetResponse(401, {"error": "unauthorized"})
+                if token in self.pending_tokens:
+                    return FakeNannetResponse(409, {"error": "pending_work"})
+                del self.leases[token]
+                return FakeNannetResponse(200, {"state": "released", "node_available": True})
+        raise AssertionError("unexpected NANNET path: " + path)
+
+
 class ClockedExperienceTests(unittest.TestCase):
     def test_digest_is_deterministic(self):
         self.assertEqual(digest({"b": 2, "a": 1}), digest({"a": 1, "b": 2}))
@@ -89,8 +166,13 @@ class GatewayTests(unittest.TestCase):
             "NANLM_RUNNER_INGEST_TOKEN": "runner-test-token",
             "CLOCKED_DEMO_ENROLLMENT_TOKEN": "enroll-test-token",
             "CLOCKED_API_KEY": "test-upstream-key",
+            "NANNET_URL": "https://nannet.test",
         })
         self.env.start()
+        self.nannet = FakeNannet()
+        self.nannet_patch = patch("gateway.urlopen", side_effect=self.nannet.urlopen)
+        self.nannet_patch.start()
+        self.addCleanup(self.nannet_patch.stop)
         self.addCleanup(self.env.stop)
         self.addCleanup(self.tmp.cleanup)
 
@@ -322,7 +404,10 @@ class GatewayTests(unittest.TestCase):
             "enroll-test-token",
         )
         self.assertEqual(status, "201 Created", result)
-        self.assertEqual(result["registration_state"], "reserved_pending_nannet_registration")
+        self.assertEqual(result["registration_state"], "nannet_lease_active")
+        self.assertTrue(result["nannet_token"].startswith("nnt_"))
+        self.assertEqual(result["nannet_address"],
+                         "nan://GM0:SC0:MC0:BS0:HW%d" % (result["node_point"] - 1))
         return result
 
     def test_demo_auth_mints_scoped_tokens_and_allocates_lowest_free_points(self):
@@ -377,6 +462,7 @@ class GatewayTests(unittest.TestCase):
 
     def test_expired_instance_releases_point(self):
         first = self.issue_demo_instance()
+        self.nannet.leases[first["nannet_token"]]["lease_expires_at"] = 0
         db = connect_db(self.db_path)
         db.execute("UPDATE demo_instances SET expires_at=0 WHERE instance_id=?",
                    (first["instance_id"],))
@@ -386,22 +472,18 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(replacement["node_point"], 9)
 
     def test_demo_instance_allocator_enforces_247_point_capacity(self):
-        db = connect_db(self.db_path)
         now = int(time.time())
         for point in range(9, 256):
-            db.execute(
-                "INSERT INTO demo_instances(node_point,instance_id,token_hash,expires_at,created_at) "
-                "VALUES(?,?,?,?,?)",
-                (point, "occupied-%d" % point, "hash-%d" % point, now + 600, now),
-            )
-        db.commit()
-        db.close()
+            self.nannet.leases["nnt_full_%d" % point] = {
+                "node_point": point, "lease_id": "lease-full-%d" % point,
+                "lease_expires_at": now + 600,
+            }
         status, result = invoke(
             self.app, "/auth/demo-token", "POST", {"instance_label": "overflow"},
             "enroll-test-token",
         )
-        self.assertEqual(status, "429 Too Many Requests")
-        self.assertEqual(result["available_range"], "9..255")
+        self.assertEqual(status, "503 Service Unavailable")
+        self.assertEqual(result["error"], "nannet_registration_failed")
 
     def test_demo_token_request_rejects_caller_selected_point_and_oversized_policy(self):
         status, result = invoke(
@@ -440,9 +522,63 @@ class GatewayTests(unittest.TestCase):
         status, result = invoke(self.app, "/admin/instances", bearer="admin-test-token")
         self.assertEqual(status, "200 OK")
         self.assertEqual(result["active_count"], 1)
-        self.assertEqual(result["available_count"], 246)
+        self.assertEqual(result["authoritative_allocator"], "NANNET")
         self.assertEqual(result["instances"][0]["node_point"], first["node_point"])
         self.assertNotIn("token", json.dumps(result))
+
+
+
+    def test_nannet_registration_is_authoritative_and_nannet_token_is_encrypted(self):
+        instance = self.issue_demo_instance("virtual-runner")
+        registration = self.nannet.registration_payloads[-1]
+        self.assertTrue(registration["consent"])
+        self.assertEqual(registration["terms_version"], "nannet-device-registration-v1")
+        self.assertEqual(registration["system_report"]["platform"], "CLOCKED demo instance")
+        self.assertNotIn("imei", registration["system_report"])
+        db = connect_db(self.db_path)
+        stored = db.execute(
+            "SELECT nannet_token_ciphertext,nannet_address FROM demo_instances WHERE instance_id=?",
+            (instance["instance_id"],),
+        ).fetchone()
+        db.close()
+        self.assertNotIn(instance["nannet_token"], stored["nannet_token_ciphertext"])
+        self.assertEqual(
+            gateway._result_fernet().decrypt(stored["nannet_token_ciphertext"].encode()).decode(),
+            instance["nannet_token"],
+        )
+        self.assertEqual(stored["nannet_address"], instance["nannet_address"])
+
+    def test_nannet_pending_work_blocks_release_but_clocked_token_is_revoked(self):
+        instance = self.issue_demo_instance()
+        self.nannet.pending_tokens.add(instance["nannet_token"])
+        status, result = invoke(
+            self.app, "/admin/instances/revoke", "POST",
+            {"instance_id": instance["instance_id"]}, "admin-test-token",
+        )
+        self.assertEqual(status, "409 Conflict")
+        self.assertTrue(result["clocked_token_revoked"])
+        status, denied = invoke(
+            self.app, "/v1/experience", "POST",
+            {"text": "must be denied"}, instance["token"],
+        )
+        self.assertEqual(status, "401 Unauthorized")
+        self.nannet.pending_tokens.remove(instance["nannet_token"])
+        status, released = invoke(
+            self.app, "/admin/instances/revoke", "POST",
+            {"instance_id": instance["instance_id"]}, "admin-test-token",
+        )
+        self.assertEqual(status, "200 OK")
+        self.assertTrue(released["nannet_node_released"])
+
+    def test_nannet_wrong_point_range_is_rejected_and_lease_released(self):
+        self.nannet.force_node_point = 8
+        status, result = invoke(
+            self.app, "/auth/demo-token", "POST",
+            {"instance_label": "bad-point"}, "enroll-test-token",
+        )
+        self.assertEqual(status, "502 Bad Gateway")
+        self.assertEqual(result["error"], "nannet_returned_invalid_node_lease")
+        self.assertEqual(self.nannet.leases, {})
 
 
 if __name__ == "__main__":
