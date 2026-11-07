@@ -1,8 +1,9 @@
 # CLOCKED demo gateway on Koyeb
 
 This deploys the CLOCKED gateway and scoped demo-token issuer as one persistent
-service. The upstream provider key remains server-side. Demo clients receive
-short-lived `clu_` tokens; they never receive `CLOCKED_API_KEY`.
+service. The upstream provider key remains server-side. Demo clients receive a
+short-lived `clu_` CLOCKED token and a scoped `nnt_` NANNET endpoint token;
+neither token contains or exposes `CLOCKED_API_KEY`.
 
 ## Koyeb service settings
 
@@ -12,15 +13,15 @@ short-lived `clu_` tokens; they never receive `CLOCKED_API_KEY`.
 - Health check: HTTP `GET /healthz`
 - Environment setting: `NANNET_URL` points to the existing Koyeb NANNET auth/control-plane service (HTTPS)
 - Persistent volume: mount at `/data`
-- Replicas: **1** while using the local SQLite volume allocator
+- Replicas: **1** while using the local SQLite token/quota store
 - Container runs as UID/GID `10001:10001`
 - Set `CLOCKED_GATEWAY_DB=/data/clocked_gateway.sqlite3`
 
-One service replica is intentional: SQLite serializes point allocation safely
-inside the single persistent volume. The gateway can serve many concurrent
-demo participants through 12 worker threads. Do not scale this container to
-multiple replicas unless the allocator and token store are moved to a shared,
-transactional database.
+One service replica is intentional because the local SQLite token/quota store
+lives on the attached persistent volume. Point allocation is owned by NANNET,
+not this service. The gateway can serve many concurrent demo participants
+through 12 worker threads. Do not scale this container to multiple replicas
+unless the token/quota store is moved to a shared, transactional database.
 
 ## Required Koyeb secrets
 
@@ -55,16 +56,7 @@ JSON body:
 
 The CLOCKED adapter calls the NANNET registration service, which transactionally assigns the **lowest currently available HW slot 8..254**, mapping to node point **9..255**. NANNET issues the endpoint's `nnt_` token and lease; the CLOCKED adapter binds that address to its own unique, expiring, request-limited `clu_` token. The caller cannot select or override a point. NANNET is the single allocation authority, so concurrent issuance across services cannot duplicate a lease. The CLOCKED database stores only a local audit mirror and an encrypted copy of the NANNET token for lease release.
 
-The response includes `token`, `instance_id`, `node_point`, and
-`registration_state`. The point is a reserved overbootstrap **node point**,
-not a local head index and not a BSR runner slot. Points 0..8 remain reserved
-by the canonical NaNROUTER point map.
-
-The state is deliberately reported as
-`reserved_pending_nannet_registration`: this gateway reserves the demo
-identity but does not claim to have completed a signed NANNET registration or
-committed a route. The route authority must still confirm that step before the
-instance is treated as a routable network endpoint.
+The response includes both `token` and `nannet_token`, plus `nannet_address`, `instance_id`, `node_point`, and `registration_state=nannet_lease_active`. The point is an overbootstrap **node point**, not a local head index and not a BSR runner slot. Points 0..8 remain reserved by the canonical NaNROUTER point map. NANNET has created the canonical address and active device lease; route capabilities remain governed by NANNET's `/v1/routes` authority.
 
 Revoke a participant and release its NANNET lease using the admin token. CLOCKED access is disabled before the remote release; if NANNET reports pending work, the route remains leased until that work is committed/rejected and the admin retries:
 
