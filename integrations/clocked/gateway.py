@@ -158,6 +158,8 @@ class Gateway:
             return self.issue_demo_instance_token(environ, start_response)
         if method == "POST" and path == "/admin/instances/revoke":
             return self.revoke_demo_instance(environ, start_response)
+        if method == "GET" and path == "/admin/instances":
+            return self.list_demo_instances(environ, start_response)
         if method == "POST" and path == "/v1/experience":
             return self.run_experience(environ, start_response)
         if method == "POST" and path == "/v1/tasks":
@@ -309,6 +311,32 @@ class Gateway:
             db.close()
         return json_response(start_response, "200 OK", {
             "revoked": True, "node_point": int(row["node_point"]),
+        })
+
+    def list_demo_instances(self, environ, start_response):
+        if not self.admin_ok(environ):
+            return json_response(start_response, "401 Unauthorized", {"error": "unauthorized"})
+        db = connect_db(self.db_path)
+        try:
+            now = int(time.time())
+            rows = db.execute(
+                "SELECT node_point,instance_id,expires_at,revoked FROM demo_instances "
+                "WHERE expires_at>? AND revoked=0 ORDER BY node_point",
+                (now,),
+            ).fetchall()
+            instances = [{
+                "node_point": int(row["node_point"]),
+                "instance_id": row["instance_id"],
+                "expires_at": int(row["expires_at"]),
+                "registration_state": "reserved_pending_nannet_registration",
+            } for row in rows]
+        finally:
+            db.close()
+        return json_response(start_response, "200 OK", {
+            "instances": instances,
+            "active_count": len(instances),
+            "available_count": 247 - len(instances),
+            "available_range": "9..255",
         })
 
     def issue_token(self, environ, start_response):
