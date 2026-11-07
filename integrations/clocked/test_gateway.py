@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from unittest.mock import patch
+from cryptography.fernet import Fernet
 
 from clocked_experience import digest, make_event, summarize_step
 from gateway import Gateway, connect_db
@@ -74,7 +75,9 @@ class GatewayTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.tmp.name, "gateway.sqlite3")
         self.app = Gateway(self.db_path, FakeClocked())
+        self.result_key = Fernet.generate_key().decode("ascii")
         self.env = patch.dict(os.environ, {
+            "CLOCKED_RESULT_ENCRYPTION_KEY": self.result_key,
             "CLOCKED_TOKEN_PEPPER": "test-only-pepper",
             "CLOCKED_GATEWAY_ADMIN_TOKEN": "admin-test-token",
             "NANLM_RUNNER_INGEST_TOKEN": "runner-test-token",
@@ -165,6 +168,17 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual([item["result_type"] for item in result["results"]], ["extract", "grounding"])
         self.assertEqual(result["results"][0]["result"]["fields"]["claims"], ["source A"])
         self.assertEqual(result["learning_state"], "awaiting_nanlmind_ingest")
+        db = connect_db(self.db_path)
+        stored = db.execute("SELECT response_json FROM experience_requests").fetchone()[0]
+        db.close()
+        self.assertTrue(stored.startswith("fernet:"))
+        calls = self.app.clocked_client.calls
+        status, replay = invoke(self.app, "/v1/tasks", "POST",
+            {"protocol": "nanlm.clocked-task-plan", "version": 1, "plan": plan},
+            token, {"Idempotency-Key": "task-plan-0001"})
+        self.assertEqual(status, "200 OK")
+        self.assertEqual(replay, result)
+        self.assertEqual(self.app.clocked_client.calls, calls)
 
     def test_multi_endpoint_plan_rejects_forward_dependency_and_unknown_endpoint(self):
         token = self.issue()
