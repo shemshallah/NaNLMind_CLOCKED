@@ -78,6 +78,21 @@ def connect_db(path: str) -> sqlite3.Connection:
     if "endpoint_id" not in columns:
         db.execute("ALTER TABLE demo_tokens ADD COLUMN endpoint_id TEXT NOT NULL DEFAULT 'clocked_demo'")
     db.execute("""
+        CREATE TABLE IF NOT EXISTS demo_instances (
+            node_point INTEGER PRIMARY KEY CHECK(node_point BETWEEN 9 AND 255),
+            instance_id TEXT NOT NULL UNIQUE,
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at INTEGER NOT NULL,
+            revoked INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
+        )
+    """)
+    token_columns = {row["name"] for row in db.execute("PRAGMA table_info(demo_tokens)")}
+    if "node_point" not in token_columns:
+        db.execute("ALTER TABLE demo_tokens ADD COLUMN node_point INTEGER")
+    if "instance_id" not in token_columns:
+        db.execute("ALTER TABLE demo_tokens ADD COLUMN instance_id TEXT")
+    db.execute("""
         CREATE TABLE IF NOT EXISTS experience_requests (
             token_hash TEXT NOT NULL,
             request_key TEXT NOT NULL,
@@ -103,6 +118,8 @@ def connect_db(path: str) -> sqlite3.Connection:
         )
     """)
     inbox_columns = {row["name"] for row in db.execute("PRAGMA table_info(endpoint_inbox)")}
+    if "node_point" not in inbox_columns:
+        db.execute("ALTER TABLE endpoint_inbox ADD COLUMN node_point INTEGER")
     if "lease_id" not in inbox_columns:
         db.execute("ALTER TABLE endpoint_inbox ADD COLUMN lease_id TEXT")
     if "lease_until" not in inbox_columns:
@@ -137,6 +154,10 @@ class Gateway:
             })
         if method == "POST" and path == "/admin/tokens":
             return self.issue_token(environ, start_response)
+        if method == "POST" and path == "/auth/demo-token":
+            return self.issue_demo_instance_token(environ, start_response)
+        if method == "POST" and path == "/admin/instances/revoke":
+            return self.revoke_demo_instance(environ, start_response)
         if method == "POST" and path == "/v1/experience":
             return self.run_experience(environ, start_response)
         if method == "POST" and path == "/v1/tasks":
@@ -174,6 +195,121 @@ class Gateway:
         runner = os.environ.get("NANLM_RUNNER_INGEST_TOKEN", "")
         supplied = environ.get("HTTP_AUTHORIZATION", "")
         return bool(runner) and secrets.compare_digest(supplied, "Bearer " + runner)
+
+    def enrollment_ok(self, environ):
+        enrollment = os.environ.get("CLOCKED_DEMO_ENROLLMENT_TOKEN", "")
+        supplied = environ.get("HTTP_AUTHORIZATION", "")
+        return bool(enrollment) and secrets.compare_digest(
+            supplied, "Bearer " + enrollment
+        )
+
+    def issue_demo_instance_token(self, environ, start_response):
+        """Mint a short-lived CLOCKED demo token and atomically reserve point 9..255."""
+        if not self.enrollment_ok(environ):
+            return json_response(start_response, "401 Unauthorized", {"error": "unauthorized"})
+        if not os.environ.get("CLOCKED_API_KEY"):
+            return json_response(start_response, "503 Service Unavailable",
+                                 {"error": "clocked_upstream_not_configured"})
+        pepper = os.environ.get("CLOCKED_TOKEN_PEPPER", "")
+        if len(pepper) < 32:
+            return json_response(start_response, "503 Service Unavailable",
+                                 {"error": "token_service_misconfigured"})
+        try:
+            data = self.read_body(environ)
+            if set(data) - {"instance_label", "max_requests", "ttl_seconds"}:
+                raise ValueError("unknown_fields")
+            label = data.get("instance_label", "demo-instance")
+            if not isinstance(label, str) or not label.strip() or len(label) > 64:
+                raise ValueError("invalid_instance_label")
+            max_requests = data.get("max_requests", 50)
+            ttl_seconds = data.get("ttl_seconds", 21600)
+            if (isinstance(max_requests, bool) or not isinstance(max_requests, int)
+                    or not 1 <= max_requests <= 500):
+                raise ValueError("max_requests_out_of_range")
+            if (isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int)
+                    or not 60 <= ttl_seconds <= 21600):
+                raise ValueError("ttl_seconds_out_of_range")
+        except (ValueError, TypeError) as exc:
+            return json_response(start_response, "400 Bad Request", {"error": str(exc)[:64]})
+
+        token = "clu_" + secrets.token_urlsafe(32)
+        instance_id = "demo-" + secrets.token_urlsafe(12)
+        now = int(time.time())
+        expires_at = now + ttl_seconds
+        digest = token_hash(token, pepper)
+        db = connect_db(self.db_path)
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("DELETE FROM demo_instances WHERE revoked=1 OR expires_at<=?", (now,))
+            used = {int(row["node_point"]) for row in db.execute(
+                "SELECT node_point FROM demo_instances WHERE revoked=0 AND expires_at>?",
+                (now,),
+            ).fetchall()}
+            node_point = next((point for point in range(9, 256) if point not in used), None)
+            if node_point is None:
+                db.rollback()
+                return json_response(start_response, "429 Too Many Requests",
+                                     {"error": "demo_instance_capacity_exhausted",
+                                      "available_range": "9..255"})
+            db.execute(
+                "INSERT INTO demo_tokens(token_hash,tenant_id,endpoint_id,expires_at,max_requests,created_at,node_point,instance_id) "
+                "VALUES(?,?,?,?,?,?,?,?)",
+                (digest, "demo", "clocked_demo", expires_at, max_requests, now,
+                 node_point, instance_id),
+            )
+            db.execute(
+                "INSERT INTO demo_instances(node_point,instance_id,token_hash,expires_at,created_at) "
+                "VALUES(?,?,?,?,?)",
+                (node_point, instance_id, digest, expires_at, now),
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+        return json_response(start_response, "201 Created", {
+            "token_type": "CLOCKED_DEMO_INSTANCE",
+            "token": token,
+            "instance_id": instance_id,
+            "instance_label": label.strip(),
+            "node_point": node_point,
+            "registration_state": "reserved_pending_nannet_registration",
+            "tenant_id": "demo",
+            "source_endpoint": "clocked_demo",
+            "expires_at": expires_at,
+            "max_requests": max_requests,
+        })
+
+    def revoke_demo_instance(self, environ, start_response):
+        if not self.admin_ok(environ):
+            return json_response(start_response, "401 Unauthorized", {"error": "unauthorized"})
+        try:
+            data = self.read_body(environ)
+            if set(data) == {"instance_id"} and isinstance(data["instance_id"], str):
+                where, value = "instance_id=?", data["instance_id"]
+            elif set(data) == {"node_point"} and isinstance(data["node_point"], int) and not isinstance(data["node_point"], bool):
+                where, value = "node_point=?", data["node_point"]
+            else:
+                raise ValueError("provide exactly one instance_id or node_point")
+        except (ValueError, TypeError) as exc:
+            return json_response(start_response, "400 Bad Request", {"error": str(exc)[:64]})
+        db = connect_db(self.db_path)
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT token_hash,node_point FROM demo_instances WHERE " + where,
+                             (value,)).fetchone()
+            if row is None:
+                db.rollback()
+                return json_response(start_response, "404 Not Found", {"error": "instance_not_found"})
+            db.execute("UPDATE demo_instances SET revoked=1 WHERE " + where, (value,))
+            db.execute("UPDATE demo_tokens SET revoked=1 WHERE token_hash=?", (row["token_hash"],))
+            db.commit()
+        finally:
+            db.close()
+        return json_response(start_response, "200 OK", {
+            "revoked": True, "node_point": int(row["node_point"]),
+        })
 
     def issue_token(self, environ, start_response):
         pepper = os.environ.get("CLOCKED_TOKEN_PEPPER", "")
@@ -233,6 +369,7 @@ class Gateway:
                        (row["token_hash"],))
             db.commit()
             return {"tenant_id": row["tenant_id"], "endpoint_id": row["endpoint_id"],
+                    "node_point": row["node_point"], "instance_id": row["instance_id"],
                     "remaining": row["max_requests"] - row["used_requests"] - 1}, None
         finally:
             db.close()
@@ -301,6 +438,8 @@ class Gateway:
                 "endpoint_id": row["endpoint_id"],
                 "remaining": row["max_requests"] - row["used_requests"] - 1,
                 "token_hash": digest,
+                "node_point": row["node_point"],
+                "instance_id": row["instance_id"],
             }, None, None, None
         finally:
             db.close()
@@ -371,6 +510,9 @@ class Gateway:
                 event = make_event(source_text, dict(response), response)
             event["source_endpoint"] = "clocked_demo"
             event["tenant_id"] = identity["tenant_id"]
+            if identity.get("node_point") is not None:
+                event["node_point"] = identity["node_point"]
+                event["instance_id"] = identity["instance_id"]
             event["protocol_version"] = SCHEMA_VERSION
             event["learning_state"] = "awaiting_nanlmind_ingest"
             payload = {
@@ -526,6 +668,8 @@ class Gateway:
             payload = {
                 "protocol": "nanlm.clocked-task-results", "version": 1,
                 "plan_id": plan.get("plan_id"), "results": results,
+                "instance_id": identity.get("instance_id"),
+                "node_point": identity.get("node_point"),
                 "learning_state": "awaiting_nanlmind_ingest",
                 "quota_remaining": identity["remaining"],
             }
@@ -577,9 +721,10 @@ class Gateway:
         try:
             try:
                 db.execute(
-                    "INSERT INTO endpoint_inbox(event_id,tenant_id,source_endpoint,base_generation,payload_json,received_at) VALUES(?,?,?,?,?,?)",
+                    "INSERT INTO endpoint_inbox(event_id,tenant_id,source_endpoint,base_generation,payload_json,received_at,node_point) VALUES(?,?,?,?,?,?,?)",
                     (event_id, identity["tenant_id"], identity["endpoint_id"], generation,
-                     json.dumps(payload, sort_keys=True, separators=(",", ":")), int(time.time())),
+                     json.dumps(payload, sort_keys=True, separators=(",", ":")), int(time.time()),
+                     identity.get("node_point")),
                 )
                 db.commit()
                 accepted = True
@@ -616,6 +761,7 @@ class Gateway:
             db.commit()
             events = [{
                 "tenant_id": row["tenant_id"], "source_endpoint": row["source_endpoint"],
+                "node_point": row["node_point"],
                 "received_at": row["received_at"], **json.loads(row["payload_json"]),
             } for row in rows]
         finally:
@@ -661,8 +807,8 @@ def main():
         if not os.environ.get(name):
             raise SystemExit(name + " must be configured in the server secret manager")
     host = os.environ.get("CLOCKED_GATEWAY_HOST", "127.0.0.1")
-    port = int(os.environ.get("CLOCKED_GATEWAY_PORT", "8787"))
-    db_path = os.environ.get("CLOCKED_GATEWAY_DB", "clocked_gateway.sqlite3")
+    port = int(os.environ.get("PORT", os.environ.get("CLOCKED_GATEWAY_PORT", "8787")))
+    db_path = os.environ.get("CLOCKED_GATEWAY_DB", "/data/clocked_gateway.sqlite3")
     app = Gateway(db_path)
     with make_server(host, port, app) as server:
         print("Clocked and endpoint intake gateway listening on %s:%d" % (host, port), flush=True)
@@ -671,3 +817,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Gunicorn/Koyeb application entry point. Keep a single worker with threaded
+# requests while the SQLite allocator owns the shared persistent /data volume.
+application = Gateway(os.environ.get("CLOCKED_GATEWAY_DB", "/data/clocked_gateway.sqlite3"))
