@@ -734,6 +734,8 @@ class Gateway:
             db.close()
         return json_response(start_response, "202 Accepted" if accepted else "200 OK", {
             "event_id": event_id, "source_endpoint": identity["endpoint_id"],
+            "node_point": identity.get("node_point"),
+            "instance_id": identity.get("instance_id"),
             "learning_state": "awaiting_runner_ring_ingest" if accepted else "duplicate_noop",
             "outcome_verified": False, "quota_remaining": identity["remaining"],
         })
