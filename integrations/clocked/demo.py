@@ -75,7 +75,7 @@ def live_classify(sample: dict, endpoint: str, token: str) -> tuple[str, dict]:
         "text": sample["text"],
     }, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     request_id = hashlib.sha256(
-        (sample["id"] + "\\0" + hashlib.sha256(payload).hexdigest()).encode()
+        (sample["id"] + "\0" + hashlib.sha256(payload).hexdigest()).encode()
     ).hexdigest()
     request = Request(endpoint, data=payload, headers={
         "Authorization": "Bearer " + token,
