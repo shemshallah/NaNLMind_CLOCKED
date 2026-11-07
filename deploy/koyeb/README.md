@@ -1,109 +1,15 @@
-# CLOCKED demo gateway on Koyeb
+# Clocked Koyeb deployment — retired
 
-This deploys the CLOCKED gateway and scoped demo-token issuer as one persistent
-service. The upstream provider key remains server-side. Demo clients receive a
-short-lived `clu_` CLOCKED token and a scoped `nnt_` NANNET endpoint token;
-neither token contains or exposes `CLOCKED_API_KEY`.
+The standalone Clocked gateway deployment is retired. **Do not create or maintain a second Koyeb service.**
 
-## Koyeb service settings
+The authenticated gateway, scoped demo-token issuer, NANNET allocator integration, and NaNLMROUTER handoff are hosted inside the existing NaNLMind Koyeb service:
 
-- Build: Dockerfile at repository root
-- Service type: Web
-- Port: `8080`
-- Health check: HTTP `GET /healthz`
-- Environment setting: `NANNET_URL` points to the existing Koyeb NANNET auth/control-plane service (HTTPS)
-- Persistent volume: mount at `/data`
-- Replicas: **1** while using the local SQLite token/quota store
-- Container runs as UID/GID `10001:10001`
-- Set `CLOCKED_GATEWAY_DB=/data/clocked_gateway.sqlite3`
+- Repository: https://github.com/shemshallah/NaNLMind
+- HTTP entry point: `integrations/nannet/server.py`
+- Gateway: `integrations/nannet/clocked_gateway.py`
+- Router: `integrations/nannet/nannet_router/`
+- Deployment image: repository-root `Dockerfile` in NaNLMind
 
-One service replica is intentional because the local SQLite token/quota store
-lives on the attached persistent volume. Point allocation is owned by NANNET,
-not this service. The gateway can serve many concurrent demo participants
-through 12 worker threads. Do not scale this container to multiple replicas
-unless the token/quota store is moved to a shared, transactional database.
+Set `CLOCKED_API_KEY`, `CLOCKED_DEMO_ENROLLMENT_TOKEN`, `CLOCKED_GATEWAY_ADMIN_TOKEN`, `CLOCKED_TOKEN_PEPPER`, and `CLOCKED_RESULT_ENCRYPTION_KEY` on that existing Koyeb service. Set `NANNET_URL` and `NANLM_ROUTER_URL` to that same service origin. GitHub Actions uses `vars.NANNET_URL` or `vars.BSR0_PORTAL_API` for the live demo endpoint.
 
-## Required Koyeb secrets
-
-Set these as Koyeb environment secrets; never put their values in Git:
-
-| Secret | Purpose |
-|---|---|
-| `CLOCKED_API_KEY` | Privileged upstream CLOCKED API credential; server only |
-| `CLOCKED_GATEWAY_ADMIN_TOKEN` | Admin-only token issuance/revocation |
-| `CLOCKED_DEMO_ENROLLMENT_TOKEN` | Demo enrollment credential for the token-mint endpoint |
-| `CLOCKED_TOKEN_PEPPER` | Server-side pepper for one-way participant-token hashes |
-| `CLOCKED_RESULT_ENCRYPTION_KEY` | Fernet key for encrypted idempotent task-result cache |
-
-Generate independent random secrets. For example:
-
-```sh
-python -c 'import secrets; print(secrets.token_urlsafe(48))'
-python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
-```
-
-Use separate random values for the admin token, enrollment token, and pepper.
-Do not reuse the provider API key as any of these values.
-
-## Multiple demo instances and node points
-
-`POST /auth/demo-token` accepts the enrollment bearer token and a bounded
-JSON body. The participant must explicitly set `consent` to `true`; otherwise
-no NANNET registration is attempted:
-
-```json
-{"instance_label":"demo-participant-01","consent":true,"max_requests":50,"ttl_seconds":21600}
-```
-
-The CLOCKED adapter calls the NANNET registration service, which transactionally assigns the **lowest currently available HW slot 8..254**, mapping to node point **9..255**. NANNET issues the endpoint's `nnt_` token and lease; the CLOCKED adapter binds that address to its own unique, expiring, request-limited `clu_` token. The caller cannot select or override a point. NANNET is the single allocation authority, so concurrent issuance across services cannot duplicate a lease. The CLOCKED database stores only a local audit mirror and an encrypted copy of the NANNET token for lease release.
-
-The response includes both `token` and `nannet_token`, plus `nannet_address`, `instance_id`, `node_point`, and `registration_state=nannet_lease_active`. The point is an overbootstrap **node point**, not a local head index and not a BSR runner slot. Points 0..8 remain reserved by the canonical NaNROUTER point map. NANNET has created the canonical address and active device lease; route capabilities remain governed by NANNET's `/v1/routes` authority.
-
-Revoke a participant and release its NANNET lease using the admin token. CLOCKED access is disabled before the remote release; if NANNET reports pending work, the route remains leased until that work is committed/rejected and the admin retries:
-
-```sh
-curl -X POST "$CLOCKED_GATEWAY_URL/admin/instances/revoke" \
-  -H "Authorization: Bearer $CLOCKED_GATEWAY_ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"instance_id":"demo-..."}'
-```
-
-## Participant flow
-
-1. Obtain a scoped token from `POST /auth/demo-token`.
-2. Send that token to `/v1/experience` or `/v1/tasks`.
-3. The gateway calls CLOCKED with its server-side `CLOCKED_API_KEY`.
-4. Returned events carry the assigned `node_point` and `instance_id`.
-5. The NANNET token is the endpoint's scoped identity for NANNET routes and
-   evidence intake. The CLOCKED token authorizes only CLOCKED SDK operations.
-6. NaNLMind still treats results as evidence awaiting its own validation and
-   ingest; CLOCKED does not write canonical heads or route tables.
-
-## Local verification
-
-```sh
-python -m pip install -r integrations/clocked/requirements.txt
-python -m unittest discover -s integrations/clocked -p 'test_*.py' -v
-docker build -t nanlmind-clocked-gateway .
-```
-
-The live API key is never required for offline tests.
-
-
-## GitHub Actions live demo
-
-The repository's manually gated `CLOCKED live demo` workflow also needs these
-GitHub Actions secrets: `CLOCKED_API_KEY`, `CLOCKED_GATEWAY_URL`, and
-`CLOCKED_DEMO_ENROLLMENT_TOKEN`. The enrollment token must match the Koyeb
-secret. The live workflow defaults to disabled and makes one direct credential
-smoke call plus the 48 training-split CLOCKED calls only after explicit manual
-confirmation. The 12 held-out rows are never sent to CLOCKED.
-
-
-## NANNET lease setting
-
-On the **NANNET Koyeb service**, set the non-secret environment variable
-`NANLM_DEVICE_LEASE_SECONDS=21600` for the six-hour demo lease horizon. NANNET
-is the authoritative allocator and must retain its own persistent `/data`
-volume and a single service replica while using SQLite. Set `NANNET_URL` on the
-CLOCKED adapter to that service's public HTTPS origin.
+This repository remains the Clocked SDK integration, native demo, protocol schemas, fixtures, and offline/live test harness. It is not a deployable web service.
