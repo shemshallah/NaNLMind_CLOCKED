@@ -264,8 +264,10 @@ class Gateway:
         try:
             _result_fernet()
             data = self.read_body(environ)
-            if set(data) - {"instance_label", "max_requests", "ttl_seconds"}:
+            if set(data) - {"instance_label", "max_requests", "ttl_seconds", "consent"}:
                 raise ValueError("unknown_fields")
+            if data.get("consent") is not True:
+                raise ValueError("explicit_nannet_registration_consent_required")
             label = data.get("instance_label", "demo-instance")
             if not isinstance(label, str) or not label.strip() or len(label) > 64:
                 raise ValueError("invalid_instance_label")
@@ -347,8 +349,24 @@ class Gateway:
         try:
             db.execute("BEGIN IMMEDIATE")
             # NANNET owns allocation. This local row is only a binding/audit mirror.
-            # Remove mirrors only after their NANNET lease has expired or been released.
-            db.execute("DELETE FROM demo_instances WHERE revoked=1 OR expires_at<=?", (now,))
+            # If NANNET has reassigned a previously mirrored point, its old lease
+            # must have been released/expired by the authoritative allocator.
+            existing = db.execute(
+                "SELECT token_hash,expires_at,revoked FROM demo_instances WHERE node_point=?",
+                (node_point,),
+            ).fetchone()
+            if existing:
+                if not existing["revoked"] and existing["expires_at"] > now:
+                    db.rollback()
+                    try:
+                        self.nannet_post("/v1/devices/release", {}, nannet_token)
+                    except RuntimeError:
+                        pass
+                    return json_response(start_response, "409 Conflict",
+                                         {"error": "nannet_point_conflicts_with_active_local_lease"})
+                db.execute("UPDATE demo_tokens SET revoked=1 WHERE token_hash=?",
+                           (existing["token_hash"],))
+                db.execute("DELETE FROM demo_instances WHERE node_point=?", (node_point,))
             db.execute(
                 "INSERT INTO demo_tokens(token_hash,tenant_id,endpoint_id,expires_at,max_requests,created_at,node_point,instance_id) "
                 "VALUES(?,?,?,?,?,?,?,?)",
@@ -473,8 +491,7 @@ class Gateway:
             now = int(time.time())
             rows = db.execute(
                 "SELECT node_point,instance_id,expires_at,revoked,nannet_address,nannet_lease_id "
-                "FROM demo_instances WHERE expires_at>? AND revoked=0 ORDER BY node_point",
-                (now,),
+                "FROM demo_instances WHERE revoked=0 ORDER BY node_point"
             ).fetchall()
             instances = [{
                 "node_point": int(row["node_point"]),
@@ -482,7 +499,10 @@ class Gateway:
                 "nannet_address": row["nannet_address"],
                 "nannet_lease_id": row["nannet_lease_id"],
                 "lease_expires_at": int(row["expires_at"]),
-                "registration_state": "nannet_lease_active",
+                "registration_state": (
+                    "nannet_lease_active" if row["expires_at"] > now
+                    else "nannet_lease_expired_pending_reconcile"
+                ),
             } for row in rows]
         finally:
             db.close()

@@ -94,9 +94,10 @@ class FakeNannet:
             payload = json.loads(request.data.decode("utf-8"))
             with self.lock:
                 self.registration_payloads.append(payload)
+                now = int(time.time())
                 used = {
-                    value["node_point"] for value in self.leases.values()
-                    if value["lease_expires_at"] > int(time.time())
+                    value["node_point"] for token, value in self.leases.items()
+                    if value["lease_expires_at"] > now or token in self.pending_tokens
                 }
                 point = self.force_node_point
                 if point is None:
@@ -400,7 +401,7 @@ class GatewayTests(unittest.TestCase):
     def issue_demo_instance(self, label="instance"):
         status, result = invoke(
             self.app, "/auth/demo-token", "POST",
-            {"instance_label": label, "max_requests": 20, "ttl_seconds": 600},
+            {"instance_label": label, "max_requests": 20, "ttl_seconds": 600, "consent": True},
             "enroll-test-token",
         )
         self.assertEqual(status, "201 Created", result)
@@ -471,6 +472,42 @@ class GatewayTests(unittest.TestCase):
         replacement = self.issue_demo_instance()
         self.assertEqual(replacement["node_point"], 9)
 
+
+    def test_expired_nannet_lease_with_pending_work_keeps_its_point_until_release(self):
+        first = self.issue_demo_instance("pending-expired")
+        self.nannet.leases[first["nannet_token"]]["lease_expires_at"] = 0
+        self.nannet.pending_tokens.add(first["nannet_token"])
+        db = connect_db(self.db_path)
+        db.execute("UPDATE demo_instances SET expires_at=0 WHERE instance_id=?",
+                   (first["instance_id"],))
+        db.commit()
+        db.close()
+
+        second = self.issue_demo_instance("next-instance")
+        self.assertEqual(first["node_point"], 9)
+        self.assertEqual(second["node_point"], 10)
+
+        status, blocked = invoke(
+            self.app, "/admin/instances/revoke", "POST",
+            {"instance_id": first["instance_id"]}, "admin-test-token",
+        )
+        self.assertEqual(status, "409 Conflict")
+        self.assertTrue(blocked["clocked_token_revoked"])
+        status, inventory = invoke(self.app, "/admin/instances", bearer="admin-test-token")
+        self.assertEqual(status, "200 OK")
+        expired = [x for x in inventory["instances"] if x["instance_id"] == first["instance_id"]]
+        self.assertEqual(len(expired), 1)
+        self.assertEqual(expired[0]["registration_state"], "nannet_lease_expired_pending_reconcile")
+
+        self.nannet.pending_tokens.remove(first["nannet_token"])
+        status, released = invoke(
+            self.app, "/admin/instances/revoke", "POST",
+            {"instance_id": first["instance_id"]}, "admin-test-token",
+        )
+        self.assertEqual(status, "200 OK")
+        third = self.issue_demo_instance("reused-after-release")
+        self.assertEqual(third["node_point"], 9)
+
     def test_demo_instance_allocator_enforces_247_point_capacity(self):
         now = int(time.time())
         for point in range(9, 256):
@@ -479,7 +516,7 @@ class GatewayTests(unittest.TestCase):
                 "lease_expires_at": now + 600,
             }
         status, result = invoke(
-            self.app, "/auth/demo-token", "POST", {"instance_label": "overflow"},
+            self.app, "/auth/demo-token", "POST", {"instance_label": "overflow", "consent": True},
             "enroll-test-token",
         )
         self.assertEqual(status, "503 Service Unavailable")
@@ -488,13 +525,13 @@ class GatewayTests(unittest.TestCase):
     def test_demo_token_request_rejects_caller_selected_point_and_oversized_policy(self):
         status, result = invoke(
             self.app, "/auth/demo-token", "POST",
-            {"instance_label": "bad", "node_point": 200}, "enroll-test-token",
+            {"instance_label": "bad", "node_point": 200, "consent": True}, "enroll-test-token",
         )
         self.assertEqual(status, "400 Bad Request")
         self.assertEqual(result["error"], "unknown_fields")
         status, result = invoke(
             self.app, "/auth/demo-token", "POST",
-            {"instance_label": "bad", "ttl_seconds": 86400}, "enroll-test-token",
+            {"instance_label": "bad", "ttl_seconds": 86400, "consent": True}, "enroll-test-token",
         )
         self.assertEqual(status, "400 Bad Request")
         self.assertEqual(result["error"], "ttl_seconds_out_of_range")
@@ -506,7 +543,7 @@ class GatewayTests(unittest.TestCase):
         def issue(index):
             status, result = invoke(
                 self.app, "/auth/demo-token", "POST",
-                {"instance_label": "parallel-%d" % index, "ttl_seconds": 600},
+                {"instance_label": "parallel-%d" % index, "ttl_seconds": 600, "consent": True},
                 "enroll-test-token",
             )
             self.assertEqual(status, "201 Created", result)
@@ -527,6 +564,16 @@ class GatewayTests(unittest.TestCase):
         self.assertNotIn("token", json.dumps(result))
 
 
+
+
+    def test_demo_registration_requires_explicit_participant_consent(self):
+        status, result = invoke(
+            self.app, "/auth/demo-token", "POST",
+            {"instance_label": "no-consent"}, "enroll-test-token",
+        )
+        self.assertEqual(status, "400 Bad Request")
+        self.assertEqual(result["error"], "explicit_nannet_registration_consent_required")
+        self.assertEqual(self.nannet.registration_payloads, [])
 
     def test_nannet_registration_is_authoritative_and_nannet_token_is_encrypted(self):
         instance = self.issue_demo_instance("virtual-runner")
@@ -574,7 +621,7 @@ class GatewayTests(unittest.TestCase):
         self.nannet.force_node_point = 8
         status, result = invoke(
             self.app, "/auth/demo-token", "POST",
-            {"instance_label": "bad-point"}, "enroll-test-token",
+            {"instance_label": "bad-point", "consent": True}, "enroll-test-token",
         )
         self.assertEqual(status, "502 Bad Gateway")
         self.assertEqual(result["error"], "nannet_returned_invalid_node_lease")
