@@ -20,6 +20,38 @@ The CLOCKED service returns typed observations. It does not own or modify NaNLMi
 
 The upstream SDK and gateway implementation lives under `integrations/clocked/`. NaNLMind-side receiving schemas and native learner code remain in the NaNLMind repository. See the architecture document for the exact file ownership split.
 
+## Independent CLOCKED chat CLI
+
+`integrations/clocked/chat_cli.py` is a participant tool for the scoped gateway:
+
+```sh
+export CLOCKED_GATEWAY_URL=https://<gateway>
+export CLOCKED_GATEWAY_TOKEN=clu_...
+python integrations/clocked/chat_cli.py \
+  --model-url http://127.0.0.1:11434/v1 --model gemma4:31b-cloud
+```
+
+The CLI keeps a revisioned, hash-chained scratch. Use `/paste NAME` to open a
+multiline copy/paste section, `/source NAME @BUFFER` to turn it into a named
+source, `/use @BUFFER` to put text into the active prompt, and `/copy` to print
+scratch for reuse. `/plan`, `/approve`, `/run`, `/endpoint`, `/experience`,
+`/tasks`, `/observations`, `/poll` and `/ack` cover the participant API routes;
+`/token` is available only when the separate admin token is explicitly supplied.
+API output is retained in scratch and can be fed back into later prompts or task
+plans. Nothing is transmitted until an explicit command is entered.
+
+The CLI does not read `CLOCKED_API_KEY`; the privileged Clocked credential stays
+server-side.
+
+## Portable C / NaN16 boundary
+
+`native/clocked_nan.h` and `native/clocked_nan.c` provide the dependency-free C99
+boundary for x86, x86_64, aarch64, ARM, RISC-V, ppc64 and wasm builds. They
+encode/decode raw NaN16 in canonical byte order, produce five-part NANNET route
+bytes/text, build `/v1/bootstrap/oidc` login bodies and Bearer headers, and
+implement the 32-lane Boolean table. Network I/O remains the caller's transport.
+See `native/README.md` and run `make -C native test`.
+
 ## Security
 
 Never commit CLOCKED API keys, gateway admin tokens, participant tokens, private source corpora or raw customer responses. Use server-side secrets and scoped, expiring participant credentials. Raw evidence belongs in an ACL-protected scratch store under explicit retention rules, not in Git or minimized telemetry.

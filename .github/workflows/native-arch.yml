@@ -1,0 +1,53 @@
+name: Portable NaN16 C interfaces
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "native/**"
+      - ".github/workflows/native-arch.yml"
+  pull_request:
+    paths:
+      - "native/**"
+      - ".github/workflows/native-arch.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            cc: cc
+            name: x86_64
+            run: true
+          - runner: ubuntu-24.04-arm
+            cc: cc
+            name: aarch64
+            run: true
+          - runner: ubuntu-latest
+            cc: arm-linux-gnueabihf-gcc
+            name: armv7
+            packages: gcc-arm-linux-gnueabihf
+            run: false
+          - runner: ubuntu-latest
+            cc: riscv64-linux-gnu-gcc
+            name: riscv64
+            packages: gcc-riscv64-linux-gnu
+            run: false
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross compiler
+        if: matrix.packages != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.packages }}
+      - name: Build
+        working-directory: native
+        run: make CC=${{ matrix.cc }} build/test_clocked_nan
+      - name: Run native tests
+        if: matrix.run
+        working-directory: native
+        run: ./build/test_clocked_nan

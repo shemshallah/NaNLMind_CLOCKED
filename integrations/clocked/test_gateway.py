@@ -4,7 +4,11 @@ import os
 import tempfile
 import unittest
 from unittest.mock import patch
-from cryptography.fernet import Fernet
+
+try:
+    from cryptography.fernet import Fernet
+except ImportError:  # optional on minimal hosts; CI installs service requirements
+    Fernet = None
 
 from clocked_experience import digest, make_event, summarize_step
 from gateway import Gateway, connect_db
@@ -70,6 +74,7 @@ class ClockedExperienceTests(unittest.TestCase):
         self.assertNotIn("hello", repr(event))
 
 
+@unittest.skipUnless(Fernet is not None, "cryptography is required for gateway result-cache tests")
 class GatewayTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
