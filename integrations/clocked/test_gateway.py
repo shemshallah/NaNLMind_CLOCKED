@@ -400,7 +400,7 @@ class GatewayTests(unittest.TestCase):
     def issue_demo_instance(self, label="instance"):
         status, result = invoke(
             self.app, "/auth/demo-token", "POST",
-            {"instance_label": label, "max_requests": 20, "ttl_seconds": 600},
+            {"instance_label": label, "max_requests": 20, "ttl_seconds": 600, "consent": True},
             "enroll-test-token",
         )
         self.assertEqual(status, "201 Created", result)
@@ -488,13 +488,13 @@ class GatewayTests(unittest.TestCase):
     def test_demo_token_request_rejects_caller_selected_point_and_oversized_policy(self):
         status, result = invoke(
             self.app, "/auth/demo-token", "POST",
-            {"instance_label": "bad", "node_point": 200}, "enroll-test-token",
+            {"instance_label": "bad", "node_point": 200, "consent": True}, "enroll-test-token",
         )
         self.assertEqual(status, "400 Bad Request")
         self.assertEqual(result["error"], "unknown_fields")
         status, result = invoke(
             self.app, "/auth/demo-token", "POST",
-            {"instance_label": "bad", "ttl_seconds": 86400}, "enroll-test-token",
+            {"instance_label": "bad", "ttl_seconds": 86400, "consent": True}, "enroll-test-token",
         )
         self.assertEqual(status, "400 Bad Request")
         self.assertEqual(result["error"], "ttl_seconds_out_of_range")
@@ -527,6 +527,16 @@ class GatewayTests(unittest.TestCase):
         self.assertNotIn("token", json.dumps(result))
 
 
+
+
+    def test_demo_registration_requires_explicit_participant_consent(self):
+        status, result = invoke(
+            self.app, "/auth/demo-token", "POST",
+            {"instance_label": "no-consent"}, "enroll-test-token",
+        )
+        self.assertEqual(status, "400 Bad Request")
+        self.assertEqual(result["error"], "explicit_nannet_registration_consent_required")
+        self.assertEqual(self.nannet.registration_payloads, [])
 
     def test_nannet_registration_is_authoritative_and_nannet_token_is_encrypted(self):
         instance = self.issue_demo_instance("virtual-runner")
