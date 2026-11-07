@@ -49,6 +49,20 @@ def _result_fernet():
         raise RuntimeError("CLOCKED_RESULT_ENCRYPTION_KEY must be a valid Fernet key") from exc
 
 
+def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    """Apply a SQLite column migration safely when requests initialize concurrently."""
+    columns = {row["name"] for row in db.execute("PRAGMA table_info(" + table + ")")}
+    if column in columns:
+        return
+    try:
+        db.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition)
+    except sqlite3.OperationalError as exc:
+        # A second worker may have observed the old schema before the first
+        # worker committed the same ALTER TABLE.
+        if "duplicate column name" not in str(exc).lower():
+            raise
+
+
 def connect_db(path: str) -> sqlite3.Connection:
     parent = os.path.dirname(path)
     if parent:
@@ -76,9 +90,7 @@ def connect_db(path: str) -> sqlite3.Connection:
         )
     """)
     # Upgrade databases created by the first Clocked-only gateway.
-    columns = {row["name"] for row in db.execute("PRAGMA table_info(demo_tokens)")}
-    if "endpoint_id" not in columns:
-        db.execute("ALTER TABLE demo_tokens ADD COLUMN endpoint_id TEXT NOT NULL DEFAULT 'clocked_demo'")
+    ensure_column(db, "demo_tokens", "endpoint_id", "TEXT NOT NULL DEFAULT 'clocked_demo'")
     db.execute("""
         CREATE TABLE IF NOT EXISTS demo_instances (
             node_point INTEGER PRIMARY KEY CHECK(node_point BETWEEN 9 AND 255),
@@ -92,18 +104,11 @@ def connect_db(path: str) -> sqlite3.Connection:
             nannet_lease_id TEXT
         )
     """)
-    instance_columns = {row["name"] for row in db.execute("PRAGMA table_info(demo_instances)")}
-    if "nannet_address" not in instance_columns:
-        db.execute("ALTER TABLE demo_instances ADD COLUMN nannet_address TEXT")
-    if "nannet_token_ciphertext" not in instance_columns:
-        db.execute("ALTER TABLE demo_instances ADD COLUMN nannet_token_ciphertext TEXT")
-    if "nannet_lease_id" not in instance_columns:
-        db.execute("ALTER TABLE demo_instances ADD COLUMN nannet_lease_id TEXT")
-    token_columns = {row["name"] for row in db.execute("PRAGMA table_info(demo_tokens)")}
-    if "node_point" not in token_columns:
-        db.execute("ALTER TABLE demo_tokens ADD COLUMN node_point INTEGER")
-    if "instance_id" not in token_columns:
-        db.execute("ALTER TABLE demo_tokens ADD COLUMN instance_id TEXT")
+    ensure_column(db, "demo_instances", "nannet_address", "TEXT")
+    ensure_column(db, "demo_instances", "nannet_token_ciphertext", "TEXT")
+    ensure_column(db, "demo_instances", "nannet_lease_id", "TEXT")
+    ensure_column(db, "demo_tokens", "node_point", "INTEGER")
+    ensure_column(db, "demo_tokens", "instance_id", "TEXT")
     db.execute("""
         CREATE TABLE IF NOT EXISTS experience_requests (
             token_hash TEXT NOT NULL,
@@ -129,13 +134,9 @@ def connect_db(path: str) -> sqlite3.Connection:
             lease_until INTEGER
         )
     """)
-    inbox_columns = {row["name"] for row in db.execute("PRAGMA table_info(endpoint_inbox)")}
-    if "node_point" not in inbox_columns:
-        db.execute("ALTER TABLE endpoint_inbox ADD COLUMN node_point INTEGER")
-    if "lease_id" not in inbox_columns:
-        db.execute("ALTER TABLE endpoint_inbox ADD COLUMN lease_id TEXT")
-    if "lease_until" not in inbox_columns:
-        db.execute("ALTER TABLE endpoint_inbox ADD COLUMN lease_until INTEGER")
+    ensure_column(db, "endpoint_inbox", "node_point", "INTEGER")
+    ensure_column(db, "endpoint_inbox", "lease_id", "TEXT")
+    ensure_column(db, "endpoint_inbox", "lease_until", "INTEGER")
     db.commit()
     return db
 
