@@ -38,7 +38,7 @@ class FakeClocked:
         self.calls += 1
         return {"fields": {"claims": [text]}, "timing": {"model_ms": 3}}
 
-    def grounding(self, text, **options):
+    def grounding(self, documents=None, **options):
         self.calls += 1
         return {"verdict": "unknown", "timing": {"model_ms": 2}}
 
