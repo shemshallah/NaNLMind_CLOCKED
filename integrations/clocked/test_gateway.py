@@ -417,5 +417,32 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(result["error"], "ttl_seconds_out_of_range")
 
 
+
+    def test_concurrent_instance_issuance_never_duplicates_node_points(self):
+        from concurrent.futures import ThreadPoolExecutor
+        def issue(index):
+            status, result = invoke(
+                self.app, "/auth/demo-token", "POST",
+                {"instance_label": "parallel-%d" % index, "ttl_seconds": 600},
+                "enroll-test-token",
+            )
+            self.assertEqual(status, "201 Created", result)
+            return result
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            issued = list(pool.map(issue, range(12)))
+        points = [item["node_point"] for item in issued]
+        self.assertEqual(sorted(points), list(range(9, 21)))
+        self.assertEqual(len({item["instance_id"] for item in issued}), 12)
+
+    def test_admin_inventory_reports_active_instances_without_tokens(self):
+        first = self.issue_demo_instance()
+        status, result = invoke(self.app, "/admin/instances", bearer="admin-test-token")
+        self.assertEqual(status, "200 OK")
+        self.assertEqual(result["active_count"], 1)
+        self.assertEqual(result["available_count"], 246)
+        self.assertEqual(result["instances"][0]["node_point"], first["node_point"])
+        self.assertNotIn("token", json.dumps(result))
+
+
 if __name__ == "__main__":
     unittest.main()
