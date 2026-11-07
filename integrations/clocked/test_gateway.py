@@ -180,6 +180,19 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(replay, result)
         self.assertEqual(self.app.clocked_client.calls, calls)
 
+    def test_multi_endpoint_fails_closed_without_result_encryption_key(self):
+        token = self.issue()
+        plan = {"schema": "nanlm.clocked-task-plan/1", "version": 1,
+                "plan_id": "task-plan-no-encryption",
+                "tasks": [{"id": "extract-a", "endpoint": "extract",
+                           "text": "private source", "depends_on": []}]}
+        with patch.dict(os.environ, {"CLOCKED_RESULT_ENCRYPTION_KEY": ""}):
+            status, result = invoke(self.app, "/v1/tasks", "POST",
+                {"protocol": "nanlm.clocked-task-plan", "version": 1, "plan": plan}, token)
+        self.assertEqual(status, "503 Service Unavailable")
+        self.assertEqual(result["error"], "result_cache_encryption_unavailable")
+        self.assertEqual(self.app.clocked_client.calls, 0)
+
     def test_multi_endpoint_plan_rejects_forward_dependency_and_unknown_endpoint(self):
         token = self.issue()
         plan = {"schema": "nanlm.clocked-task-plan/1", "version": 1,
