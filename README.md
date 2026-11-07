@@ -69,3 +69,20 @@ response explicitly reports `reserved_pending_nannet_registration`; a token
 reservation is not represented as a completed NANNET registration or route
 commit. Revoke an instance with the admin-only
 `POST /admin/instances/revoke` route. See [Koyeb deployment and secret setup](deploy/koyeb/README.md).
+
+
+## Manually gated live demo workflow
+
+After the Koyeb gateway is deployed and its secrets are configured, run the
+`CLOCKED live demo` GitHub Actions workflow with `confirm_live_calls=true`.
+It uses the Actions-side `CLOCKED_API_KEY` for a one-request credential smoke
+test, asks Koyeb for one scoped demo-instance token, builds the native learner
+from the canonical NaNLMind repository, and runs the 48-training / 12-held-out
+sample demo against Koyeb. The live job is disabled by default and requires an
+explicit manual confirmation because it makes billable upstream calls.
+
+Add these GitHub Actions repository secrets:
+
+- `CLOCKED_API_KEY` — upstream credential for the one-request Actions smoke test.
+- `CLOCKED_GATEWAY_URL` — deployed Koyeb gateway base URL (HTTPS).
+- `CLOCKED_DEMO_ENROLLMENT_TOKEN` — same enrollment secret configured on Koyeb.
