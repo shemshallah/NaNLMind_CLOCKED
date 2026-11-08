@@ -5,6 +5,7 @@ CLOCKED by Rezolve.ai SDK integration, multi-endpoint orchestration, evidence pa
 ## Canonical design documents
 
 - [CLOCKED × NaNLMind × HERMES architecture brainstorm](docs/CLOCKED_HERMES_BRAINSTORM.md)
+- [CLOCKED release readiness and HW3:0 architecture update](docs/CLOCKED_RELEASE_READINESS.md)
 - [HERMES Autonomous CLOCKED Cognition and NaN Head Cortex](docs/HERMES_AUTONOMOUS_CLOCKED_HEAD_CORTEX.md)
 
 ## Repository boundary
